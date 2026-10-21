@@ -1,5 +1,5 @@
 /**
- * dsh-galgame-room —— Host 半侧（阶段 1）。
+ * dsh-story-party —— Host 半侧（阶段 1）。
  *
  * 只做三件事：
  *   1. 在本机起一个房间 HTTP 服务（默认 0.0.0.0:7301），房主开放端口后别人就能连；
@@ -281,7 +281,7 @@ function createGenerate(ctx, config) {
 }
 
 export function apply(ctx, config) {
-  console.log('[dsh-galgame-room] 作者：B站：喵诺澪染 · 开源免费，禁止倒卖')
+  console.log('[dsh-story-party] 作者：B站：喵诺澪染 · 开源免费，禁止倒卖')
   const configuredPort = Number(readConfig(config, 'port', 7302))
   const hostname = String(readConfig(config, 'hostname', '0.0.0.0'))
   const maxPlayers = Number(readConfig(config, 'maxPlayers', 4))

@@ -1,8 +1,8 @@
 {
-  "name": "dsh-galgame-room",
-  "version": "0.1.47",
+  "name": "dsh-story-party",
+  "version": "0.1.48",
   "author": "喵诺澪染（B站：喵诺澪染）",
-  "description": "联机 Galgame 房间插件：房间 API、房间独立 LLM 会话、共享消息流与网页房间",
+  "description": "DSH 联机故事派对插件：多人共享剧情、剧情包、子代理与地图（Galgame / 海龟汤 / 剧本杀）",
   "type": "module",
   "main": "src/index.js",
   "icon": "assets/icon.svg",
@@ -68,11 +68,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/miao-nuo-lian-ran/dsh-galgame-room.git"
+    "url": "git+https://github.com/miao-nuo-lian-ran/dsh-story-party.git"
   },
-  "homepage": "https://github.com/miao-nuo-lian-ran/dsh-galgame-room#readme",
+  "homepage": "https://github.com/miao-nuo-lian-ran/dsh-story-party#readme",
   "bugs": {
-    "url": "https://github.com/miao-nuo-lian-ran/dsh-galgame-room/issues"
+    "url": "https://github.com/miao-nuo-lian-ran/dsh-story-party/issues"
   },
   "license": "MIT"
 }

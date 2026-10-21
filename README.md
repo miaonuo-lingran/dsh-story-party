@@ -1,4 +1,4 @@
-# dsh-galgame-room
+# dsh-story-party
 
 > 作者：**B站：喵诺澪染**　·　许可：MIT　·　开源免费，禁止倒卖
 >
@@ -20,15 +20,15 @@
 
 在 DSH 桌面版里：**设置 → 插件 → 添加插件**，填下面任意一种：
 
-- 包名：`dsh-galgame-room`（发布到 npm 后可用）
-- GitHub 仓库：`https://github.com/miao-nuo-lian-ran/dsh-galgame-room`
+- 包名：`dsh-story-party`（发布到 npm 后可用）
+- GitHub 仓库：`https://github.com/miao-nuo-lian-ran/dsh-story-party`
 - 本地目录：`F:\超分\dsh-galgame-room`
-- 本地 tgz：`F:\超分\.dshplugin\dsh-galgame-room-0.1.47.tgz`
+- 本地 tgz：`F:\超分\.dshplugin\dsh-story-party-0.1.48.tgz`
 
 命令行：
 
 ```bash
-dsh plugin --profile desktop add dsh-galgame-room
+dsh plugin --profile desktop add dsh-story-party
 ```
 
 ## 署名与许可
@@ -423,7 +423,7 @@ $env:npm_config_cache = 'F:\超分\dsh-galgame-room\.npm-cache'   # 可选：避
 npm pack --pack-destination F:\超分\.dshplugin
 ```
 
-产物：`F:\超分\.dshplugin\dsh-galgame-room-0.1.47.tgz`，共 31 个文件
+产物：`F:\超分\.dshplugin\dsh-story-party-0.1.48.tgz`，共 31 个文件
 （`src/`、`public/`、`assets/`、`scripts/`、`cordis.patch.yml`、`README.md`、`package.json`）。
 
 包内已声明：
@@ -435,16 +435,16 @@ npm pack --pack-destination F:\超分\.dshplugin
 导入方式二选一：
 
 1. **插件管理 → 安装插件**，在安装框里填本地包路径
-   `F:\超分\.dshplugin\dsh-galgame-room-0.1.47.tgz`（插件管理器支持 registry / path / git / tarball
+   `F:\超分\.dshplugin\dsh-story-party-0.1.48.tgz`（插件管理器支持 registry / path / git / tarball
    四类来源），装完重启 DSH；
 2. **命令行**（插件管理器不可用时）：
 
    ```powershell
    cd C:\Users\喵诺澪染\.dsh\profiles\desktop
-   pnpm add file:F:/超分/.dshplugin/dsh-galgame-room-0.1.47.tgz
+   pnpm add file:F:/超分/.dshplugin/dsh-story-party-0.1.48.tgz
    ```
 
-   然后把 `dsh-galgame-room` 加进 `package.json` 的 `dsh.profile.bundles`，重启 DSH。
+   然后把 `dsh-story-party` 加进 `package.json` 的 `dsh.profile.bundles`，重启 DSH。
 
 > 也可以用不联网的复制式安装：`scripts/install-dsh.ps1`（直接复制到 profile 的
 > `node_modules` 并登记 bundles）。

@@ -1,8 +1,8 @@
-# dsh-galgame-room bundle patch
+# dsh-story-party bundle patch
 # 把房间插件挂进 DSH 配置树。entry id 必须与 src/index.js 的 name 一致。
 - insert:
     - id: galgame-room
-      name: 'dsh-galgame-room'
+      name: 'dsh-story-party'
       # 端口 / 最大人数 / 选择性发言的防抖窗口都可以在这里改，改完重启生效。
       # 7301 在本机被系统保留（bind 报 EACCES / EADDRINUSE，netstat 不可见），
       # 所以默认落在 7302；换一台机器可以改回 7301 或任意空闲端口。
