@@ -1,9 +1,9 @@
-﻿# 回滚：把 profile 恢复到安装前的样子（package.json + 移走插件目录）
+# 回滚：把 profile 恢复到安装前的样子（package.json + 移走插件目录）
 # 用法：powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\rollback-dsh.ps1
 # 找不到备份时，退化为“从 package.json 里删掉插件两项 + 移走目录”。
 
 param(
-  [string]$Backup = 'F:\超分\dsh-galgame-room\.pre-install\package.json'
+  [string]$Backup = Join-Path $PSScriptRoot '.pre-install\package.json'
 )
 
 $ErrorActionPreference = 'Stop'

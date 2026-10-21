@@ -37,7 +37,7 @@ dsh plugin --profile desktop add dsh-story-party
 **方式三：本地目录**（开发用）
 
 ```
-F:\超分\dsh-galgame-room
+path/to/dsh-story-party
 ```
 
 ## 署名与许可
@@ -81,7 +81,7 @@ cordis.patch.yml     插件挂载声明 + 默认配置
 mock 模型只在「提问 / 叫旁白 / GM 推进」时接话，其余输出 `<silent>`，用来验证选择性发言。
 
 ```powershell
-cd F:\超分\dsh-galgame-room
+cd dsh-story-party
 $env:GALGAME_ROOM_PORT = '7302'
 node src/standalone.js
 ```
@@ -89,7 +89,7 @@ node src/standalone.js
 另开一个窗口跑完整体验：
 
 ```powershell
-Invoke-Expression (Get-Content -Raw -Encoding UTF8 'F:\超分\dsh-galgame-room\scripts\acceptance.ps1')
+Invoke-Expression (Get-Content -Raw -Encoding UTF8 'dsh-story-party\scripts\acceptance.ps1')
 ```
 
 > 也可以用 `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\acceptance.ps1`。
@@ -412,7 +412,7 @@ curl.exe -N "$base/api/rooms/<房号>/events?t=<邀请令牌>"
 
 ```powershell
 # 会先备份 profile/package.json，再复制插件并登记到 bundles
-powershell -NoProfile -ExecutionPolicy Bypass -File 'F:\超分\dsh-galgame-room\scripts\install-dsh.ps1'
+powershell -NoProfile -ExecutionPolicy Bypass -File 'dsh-story-party\scripts\install-dsh.ps1'
 ```
 
 然后**重启 DeepSeek Harness**。启动日志里应出现：
@@ -427,12 +427,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File 'F:\超分\dsh-galgame-room\
 ### 打包（.tgz 本地导入包）
 
 ```powershell
-cd F:\超分\dsh-galgame-room
-$env:npm_config_cache = 'F:\超分\dsh-galgame-room\.npm-cache'   # 可选：避免写系统 npm 缓存
-npm pack --pack-destination F:\超分\.dshplugin
+cd dsh-story-party
+$env:npm_config_cache = 'dsh-story-party\.npm-cache'   # 可选：避免写系统 npm 缓存
+npm pack --pack-destination .
 ```
 
-产物：`F:\超分\.dshplugin\dsh-story-party-0.1.48.tgz`，共 31 个文件
+产物：`.\dsh-story-party-0.1.48.tgz`，共 31 个文件
 （`src/`、`public/`、`assets/`、`scripts/`、`cordis.patch.yml`、`README.md`、`package.json`）。
 
 包内已声明：
@@ -444,12 +444,12 @@ npm pack --pack-destination F:\超分\.dshplugin
 导入方式二选一：
 
 1. **插件管理 → 安装插件**，在安装框里填本地包路径
-   `F:\超分\.dshplugin\dsh-story-party-0.1.48.tgz`（插件管理器支持 registry / path / git / tarball
+   `.\dsh-story-party-0.1.48.tgz`（插件管理器支持 registry / path / git / tarball
    四类来源），装完重启 DSH；
 2. **命令行**（插件管理器不可用时）：
 
    ```powershell
-   cd C:\Users\喵诺澪染\.dsh\profiles\desktop
+   cd $env:USERPROFILE\.dsh\profiles\desktop
    pnpm add file:F:/超分/.dshplugin/dsh-story-party-0.1.48.tgz
    ```
 
