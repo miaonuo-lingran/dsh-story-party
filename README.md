@@ -18,17 +18,26 @@
 
 ## 安装
 
-在 DSH 桌面版里：**设置 → 插件 → 添加插件**，填下面任意一种：
+**方式一：GitHub（推荐，不用注册 npm）**
 
-- 包名：`dsh-story-party`（发布到 npm 后可用）
-- GitHub 仓库：`https://github.com/miaonuo-lingran/dsh-story-party`
-- 本地目录：`F:\超分\dsh-galgame-room`
-- 本地 tgz：`F:\超分\.dshplugin\dsh-story-party-0.1.48.tgz`
+DSH 桌面版：**设置 → 插件 → 添加插件**，填仓库地址：
 
-命令行：
+```
+https://github.com/miaonuo-lingran/dsh-story-party
+```
+
+或到仓库 **Releases** 下载 `dsh-story-party-*.tgz`，在「添加插件」里选本地文件安装。
+
+**方式二：npm（可选，发布后可用）**
 
 ```bash
 dsh plugin --profile desktop add dsh-story-party
+```
+
+**方式三：本地目录**（开发用）
+
+```
+F:\超分\dsh-galgame-room
 ```
 
 ## 署名与许可
