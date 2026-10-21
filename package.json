@@ -68,11 +68,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/miao-nuo-lian-ran/dsh-story-party.git"
+    "url": "git+https://github.com/miaonuo-lingran/dsh-story-party.git"
   },
-  "homepage": "https://github.com/miao-nuo-lian-ran/dsh-story-party#readme",
+  "homepage": "https://github.com/miaonuo-lingran/dsh-story-party#readme",
   "bugs": {
-    "url": "https://github.com/miao-nuo-lian-ran/dsh-story-party/issues"
+    "url": "https://github.com/miaonuo-lingran/dsh-story-party/issues"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
 }

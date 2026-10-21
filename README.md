@@ -21,7 +21,7 @@
 在 DSH 桌面版里：**设置 → 插件 → 添加插件**，填下面任意一种：
 
 - 包名：`dsh-story-party`（发布到 npm 后可用）
-- GitHub 仓库：`https://github.com/miao-nuo-lian-ran/dsh-story-party`
+- GitHub 仓库：`https://github.com/miaonuo-lingran/dsh-story-party`
 - 本地目录：`F:\超分\dsh-galgame-room`
 - 本地 tgz：`F:\超分\.dshplugin\dsh-story-party-0.1.48.tgz`
 
