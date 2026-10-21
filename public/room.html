@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>联机 Galgame · 房间</title>
+  <link rel="stylesheet" href="/room-assets/room.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 加入 -->
+    <section id="join-screen" class="screen center" hidden>
+      <div class="card join-card">
+        <p class="eyebrow">GALGAME ROOM</p>
+        <h1 id="join-title">联机 Galgame</h1>
+        <p id="join-sub" class="muted">输入昵称，进入这场故事。</p>
+        <form id="join-form" class="join-form">
+          <label class="field">
+            <span>昵称</span>
+            <input id="join-name" name="name" maxlength="16" autocomplete="nickname" placeholder="比如 小满" required>
+          </label>
+          <div class="field" id="invite-row" hidden>
+            <span>邀请令牌</span>
+            <input id="join-invite" name="invite" autocomplete="off" placeholder="向房主索取">
+          </div>
+          <label class="field" id="join-password-row" hidden>
+            <span>房间密码</span>
+            <input id="join-password" type="password" maxlength="64" autocomplete="current-password" placeholder="向房主要">
+          </label>
+          <fieldset class="field">
+            <legend>以什么身份进入</legend>
+            <div class="roles">
+              <label class="role-option">
+                <input type="radio" name="role" value="player" checked>
+                <span class="role-name">玩家</span>
+                <span class="role-hint">发言会进入剧情</span>
+              </label>
+              <label class="role-option">
+                <input type="radio" name="role" value="spectator">
+                <span class="role-name">观众</span>
+                <span class="role-hint">只看不说进剧情</span>
+              </label>
+            </div>
+          </fieldset>
+          <button type="submit" id="join-submit" class="primary block">进入房间</button>
+          <p id="join-error" class="error" hidden></p>
+        </form>
+      </div>
+    </section>
+
+    <!-- 房间 -->
+    <section id="room-screen" class="screen room" hidden>
+      <header class="room-header">
+        <div class="room-title-wrap">
+          <h1 id="room-title">房间</h1>
+          <span id="room-code" class="room-code"></span>
+        </div>
+        <div class="room-actions">
+          <span id="conn-badge" class="conn-badge" title="实时连接状态">连接中</span>
+          <button id="avatar-btn" class="ghost" type="button" title="设置我的头像">
+            <span id="avatar-preview" class="avatar avatar-sm" aria-hidden="true">👤</span>
+            <span class="only-desktop">头像</span>
+          </button>
+          <input type="file" id="avatar-file" accept="image/*" hidden>
+          <button id="copy-invite" class="ghost" type="button">复制邀请链接</button>
+          <button id="toggle-members" class="ghost only-mobile" type="button">参与者</button>
+        </div>
+      </header>
+
+      <main class="room-main">
+        <section class="chat">
+          <div id="messages" class="messages" role="log" aria-live="polite"></div>
+          <div id="thinking" class="thinking" hidden>
+            <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span>旁白正在构思…</span>
+          </div>
+          <div id="vote-bar" class="vote-bar" hidden>
+            <span id="vote-text" class="vote-text"></span>
+            <button id="vote-agree" class="mini primary" type="button">同意</button>
+            <button id="vote-disagree" class="mini" type="button">反对</button>
+            <button id="vote-cancel" class="mini danger-mini" type="button">取消投票</button>
+          </div>
+          <form id="composer" class="composer">
+            <input id="composer-input" maxlength="500" autocomplete="off" placeholder="说点什么…（Enter 发送）" aria-label="发言">
+            <button type="submit" id="send" class="primary">发送</button>
+          </form>
+          <p class="composer-hint" id="composer-hint"></p>
+        </section>
+
+        <aside id="members-panel" class="members">
+          <div class="members-head">
+            <h2>参与者</h2>
+            <span id="member-count" class="muted"></span>
+          </div>
+          <ul id="member-list" class="member-list"></ul>
+          <div id="gm-bar" class="gm-bar" hidden>
+            <h3>房主控制</h3>
+            <button id="advance" class="primary block" type="button">推进剧情</button>
+            <div class="field" id="agent-field" hidden>
+              <span>让子代理说话</span>
+              <select id="agent-select"></select>
+            </div>
+            <button id="speak-agent" class="ghost block" type="button" hidden>让她接话</button>
+            <button id="start-vote" class="ghost block" type="button" hidden>发起揭晓投票</button>
+            <button id="close-room" class="danger block" type="button">关闭房间</button>
+            <p class="muted small">推进 = 跳过等待，让旁白立刻往下写。</p>
+          </div>
+        </aside>
+      </main>
+    </section>
+
+    <!-- 关闭 / 致命错误 -->
+    <section id="closed-screen" class="screen center" hidden>
+      <div class="card join-card">
+        <p class="eyebrow">THE END</p>
+        <h1 id="closed-title">房间已关闭</h1>
+        <p id="closed-sub" class="muted">这场故事到这里就结束了。</p>
+      </div>
+    </section>
+  </div>
+
+  <!-- 复制邀请链接：让房主挑用哪条 -->
+  <div id="link-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="link-title">
+      <h2 id="link-title">复制哪种链接？</h2>
+      <p class="muted small">公网地址来自插件配置里的 publicUrl；局域网地址适合同一个 Wi-Fi 的朋友。</p>
+      <ul id="link-list" class="link-list"></ul>
+      <p id="link-hint" class="muted small" hidden></p>
+      <button id="link-close" class="ghost block" type="button">取消</button>
+    </div>
+  </div>
+
+  <div class="brand-watermark" aria-hidden="true">B站：喵诺澪染</div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script src="/room-assets/dialog.js" defer></script>
+  <script src="/room-assets/room.js" defer></script>
+</body>
+</html>

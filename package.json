@@ -1,0 +1,78 @@
+{
+  "name": "dsh-galgame-room",
+  "version": "0.1.47",
+  "author": "喵诺澪染（B站：喵诺澪染）",
+  "description": "联机 Galgame 房间插件：房间 API、房间独立 LLM 会话、共享消息流与网页房间",
+  "type": "module",
+  "main": "src/index.js",
+  "icon": "assets/icon.svg",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./client/client.js",
+    "./standalone": "./src/standalone.js",
+    "./room-server": "./src/room-server.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "client",
+    "public",
+    "assets",
+    "scripts",
+    "cordis.patch.yml",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "galgame",
+    "multiplayer",
+    "room"
+  ],
+  "engines": {
+    "node": ">=22",
+    "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-chat"
+      ],
+      "platform": "web"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.2.0-rc.1": "compatible",
+        "0.2.0-rc.2": "compatible",
+        "0.2.1-rc.2": "compatible"
+      }
+    }
+  },
+  "scripts": {
+    "standalone": "node src/standalone.js"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-agent-default-model": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-home-paths": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm": "^0.2.0-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/miao-nuo-lian-ran/dsh-galgame-room.git"
+  },
+  "homepage": "https://github.com/miao-nuo-lian-ran/dsh-galgame-room#readme",
+  "bugs": {
+    "url": "https://github.com/miao-nuo-lian-ran/dsh-galgame-room/issues"
+  },
+  "license": "MIT"
+}

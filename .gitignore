@@ -1,0 +1,13 @@
+# 测试数据与临时文件
+.data/
+.data-*/
+data/
+.pre-install/
+.hostsim/
+
+# 依赖（本包无运行时依赖）
+node_modules/
+
+.npm-cache/
+.pkgcheck/
+.*test*/

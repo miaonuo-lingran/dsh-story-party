@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>联机 Galgame · 剧情包制作</title>
+  <link rel="stylesheet" href="/room-assets/room.css">
+</head>
+<body>
+  <section class="screen center">
+    <div class="card maker-card-page">
+      <p class="eyebrow">STORY PACK MAKER</p>
+      <h1>做一个剧情包</h1>
+      <p class="muted">人设、大纲、背景都能放进去；导出 .zip 发给别人，或直接装进本机房间服务。</p>
+
+      <div class="maker-actions">
+        <a class="ghost" href="/">回开房页</a>
+        <button id="download" class="primary" type="button">下载 .zip</button>
+        <button id="install" class="ghost" type="button">装进本机</button>
+        <button id="save-draft" class="ghost" type="button">保存草稿</button>
+        <button id="clear-draft" class="ghost" type="button">清除草稿</button>
+        <span id="draft-status" class="muted small">草稿只存在这台浏览器；背景素材文件需要重新选。</span>
+      </div>
+
+      <section class="maker-section">
+        <h2>基本信息</h2>
+        <div class="grid-2">
+          <label class="field">
+            <span>包名</span>
+            <input id="pack-name" maxlength="60" placeholder="老式公寓的夏天">
+          </label>
+          <label class="field">
+            <span>版本</span>
+            <input id="pack-version" maxlength="20" value="1.0.0">
+          </label>
+          <label class="field">
+            <span>作者</span>
+            <input id="pack-author" maxlength="40" placeholder="你的名字">
+          </label>
+          <label class="field">
+            <span>一句话简介</span>
+            <input id="pack-desc" maxlength="300" placeholder="楼下学妹和你的同居日常">
+          </label>
+          <label class="field">
+            <span>包类型</span>
+            <select id="pack-mode">
+              <option value="roleplay">角色扮演（默认）</option>
+              <option value="soup">海龟汤</option>
+              <option value="mystery">剧本杀</option>
+              <option value="other">其他 / 自定义</option>
+            </select>
+            <p id="mode-hint" class="muted small"></p>
+          </label>
+          <label class="field span-2">
+            <span>开场说明（可选，固定第一条；背景故事从这之后开始）</span>
+            <textarea id="pack-intro" rows="3" placeholder="欢迎使用由 B 站：喵诺澪染 制作的插件，接下来是一些注意事项……"></textarea>
+          </label>
+          <label class="field span-2">
+            <span>建议人数（最少 / 最多）</span>
+            <div class="port-row">
+              <input id="players-min" type="number" min="1" max="16" value="2" aria-label="最少人数">
+              <input id="players-max" type="number" min="1" max="16" value="4" aria-label="最多人数">
+            </div>
+            <label class="check-row">
+              <input type="checkbox" id="single-player">
+              <span>单人本（1 人游玩，比如海龟汤、单人剧情）</span>
+            </label>
+          </label>
+        </div>
+      </section>
+
+      <section class="maker-section">
+        <h2>世界观 / 大纲</h2>
+        <textarea id="scenario" rows="8" placeholder="故事发生在哪里、你们是什么关系、现在是什么状态……"></textarea>
+      </section>
+
+      <section class="maker-section">
+        <div class="card-head">
+          <h2>地图（可选）</h2>
+          <span class="muted small">左键选中 · 右键菜单（设为父级/调整层级）· 双击进入下一级</span>
+          <button id="add-location" class="ghost" type="button">+ 添加地点</button>
+        </div>
+        <div id="map-breadcrumb" class="map-breadcrumb"></div>
+        <div id="map-canvas" class="map-canvas"></div>
+        <div id="location-list" class="location-list"></div>
+        <div class="card-head map-route-head">
+          <h3>地点关系</h3>
+          <button id="add-route" class="ghost" type="button">+ 添加关系</button>
+        </div>
+        <div id="route-list" class="location-list"></div>
+      </section>
+
+      <section class="maker-section">
+        <div class="card-head">
+          <h2>人物卡</h2>
+          <button id="add-char" class="ghost" type="button">+ 添加人物</button>
+        </div>
+        <div id="char-list"></div>
+      </section>
+
+      <section class="maker-section">
+        <div class="card-head">
+          <h2>人物关系图</h2>
+          <span class="muted small">拖动人物摆位置，从右侧「+」拉一条线到另一个人物</span>
+        </div>
+        <div id="relation-graph" class="relation-graph"></div>
+      </section>
+
+      <section class="maker-section">
+        <h2>背景素材（可选）</h2>
+        <input type="file" id="assets" multiple accept="image/*" class="file-input">
+        <p id="asset-list" class="muted small">会放进 zip 的 assets/ 目录，阶段 3 的舞台用。</p>
+      </section>
+
+      <p id="status" class="muted small"></p>
+    </div>
+  </section>
+
+  <footer class="brand-footer">由 B站：喵诺澪染 制作 · 开源免费 · 禁止倒卖</footer>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script src="/room-assets/make.js" defer></script>
+</body>
+</html>

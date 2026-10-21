@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>联机 Galgame · 房间</title>
+  <link rel="stylesheet" href="/room-assets/room.css">
+</head>
+<body>
+  <section class="screen center">
+    <div class="card join-card">
+      <p class="eyebrow">GALGAME ROOM</p>
+      <h1>联机房间</h1>
+      <p class="muted">创建一间房，或者加入朋友的房间。</p>
+
+      <div class="mode-switch" role="tablist" aria-label="房间模式">
+        <button type="button" class="mode-btn is-active" data-mode="create" role="tab" aria-selected="true">创建房间</button>
+        <button type="button" class="mode-btn" data-mode="join" role="tab" aria-selected="false">加入房间</button>
+        <button type="button" class="mode-btn" data-mode="solo" role="tab" aria-selected="false">自我游玩</button>
+      </div>
+
+      <div id="create-panel" class="mode-panel">
+        <form id="create-form" class="join-form">
+          <label class="field">
+            <span>房间名</span>
+            <input id="room-title-input" maxlength="40" placeholder="天台上的黄昏" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>你的昵称（这一局你是 GM）</span>
+            <input id="gm-name" maxlength="16" placeholder="澪" autocomplete="nickname" required>
+          </label>
+
+          <label class="field">
+            <span>房间密码（可选，别人进房要输）</span>
+            <input id="room-password" type="password" maxlength="64" autocomplete="new-password" placeholder="留空 = 不设密码">
+          </label>
+
+          <label class="field">
+            <span>角色（cosplay 卡 / 剧情包）</span>
+            <select id="character-select">
+              <option value="">不用，走内置剧本</option>
+            </select>
+          </label>
+
+          <div class="field pack-field">
+            <span>剧情包</span>
+            <div class="port-row">
+              <input type="file" id="pack-file" accept=".zip,application/zip" class="file-input" aria-label="剧情包 zip">
+              <button type="button" id="pack-import" class="ghost">导入 .zip</button>
+            </div>
+            <p class="muted small">没有包？<a href="/make">做一个</a>（人设、大纲、背景都能放进去）。</p>
+          </div>
+
+          <fieldset class="field port-field">
+            <legend>开放端口</legend>
+            <div class="port-row">
+              <input id="port-input" inputmode="numeric" pattern="[0-9]*" placeholder="7302" aria-label="本机端口">
+              <button type="button" id="port-apply" class="ghost">开放</button>
+            </div>
+            <p id="port-status" class="muted small"></p>
+          </fieldset>
+
+          <label class="field">
+            <span>公网地址（可选，樱花 frp 域名）</span>
+            <div class="port-row">
+              <input id="public-url" placeholder="https://xxx.sakurafrp.com" autocomplete="off">
+              <button type="button" id="public-url-save" class="ghost">保存</button>
+            </div>
+            <p id="public-url-status" class="muted small">樱花 HTTP 隧道请填 https 域名；TCP 隧道填 http://域名:端口。改完点保存，马上生效。</p>
+          </label>
+
+          <label class="field">
+            <span>AI 读取历史 <button type="button" id="context-help" class="mini">说明</button></span>
+            <select id="context-messages">
+              <option value="30" selected>最近 30 条（默认，省 token）</option>
+              <option value="100">最近 100 条（记得更久）</option>
+              <option value="0">全部历史（每轮重发，费 token）</option>
+            </select>
+          </label>
+
+          <label class="check-row">
+            <input type="checkbox" id="auto-summary" checked>
+            <span>长局自动摘要（每攒一批消息压缩一次，省钱、记得更久）</span>
+          </label>
+
+          <label class="check-row">
+            <input type="checkbox" id="save-reasoning">
+            <span>记录 AI 思维链（调试用，只存在本机，不会发给玩家）</span>
+          </label>
+
+          <button type="submit" id="create" class="primary block">创建房间</button>
+          <p id="error" class="error" hidden></p>
+        </form>
+
+        <div class="host-addresses">
+          <p class="muted small">朋友用这些地址访问（同一局域网）：</p>
+          <ul id="addr-list" class="addr-list"></ul>
+        </div>
+
+        <div class="host-addresses">
+          <p class="muted small">继续上次没玩完的局：</p>
+          <ul id="room-list" class="room-list"></ul>
+        </div>
+      </div>
+
+      <div id="join-panel" class="mode-panel" hidden>
+        <form id="join-form" class="join-form">
+          <label class="field">
+            <span>邀请链接</span>
+            <input id="join-link" placeholder="http://10.0.0.2:7302/room/ABC123?t=..." autocomplete="off">
+          </label>
+          <button type="submit" class="primary block">进入房间</button>
+          <p id="join-error" class="error" hidden></p>
+        </form>
+        <p class="muted small">链接是房主在房间里点「复制邀请链接」得到的；换台机器也能用，内网地址可能要换成房主的局域网 IP。</p>
+      </div>
+
+      <div id="solo-panel" class="mode-panel" hidden>
+        <form id="solo-form" class="join-form">
+          <label class="field">
+            <span>你的昵称</span>
+            <input id="solo-name" maxlength="16" placeholder="澪" autocomplete="nickname" required>
+          </label>
+          <label class="field">
+            <span>角色（cosplay 卡 / 剧情包）</span>
+            <select id="solo-character">
+              <option value="">不用，走内置剧本</option>
+            </select>
+          </label>
+          <div class="field pack-field">
+            <span>剧情包</span>
+            <div class="port-row">
+              <input type="file" id="solo-pack-file" accept=".zip,application/zip" class="file-input" aria-label="自我游玩用的剧情包 zip">
+              <button type="button" id="solo-pack-import" class="ghost">导入 .zip</button>
+            </div>
+            <p class="muted small">没有包？<a href="/make">做一个</a>；导入后会出现在上面的「角色」里。</p>
+          </div>
+          <button type="submit" id="solo-start" class="primary block">开始游玩</button>
+          <p id="solo-error" class="error" hidden></p>
+          <p class="muted small">单人房间：只有你和 AI，不生成可分享的邀请链接，别人也进不来。</p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <div id="room-edit-modal" class="modal" hidden>
+    <div class="modal-card modal-confirm" role="dialog" aria-modal="true" aria-labelledby="room-edit-heading">
+      <h2 id="room-edit-heading">编辑房间</h2>
+      <label class="field">
+        <span>房间名</span>
+        <input id="room-edit-title" maxlength="60" placeholder="房间名" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>端口</span>
+        <input id="room-edit-port" inputmode="numeric" pattern="[0-9]*" placeholder="7302">
+      </label>
+      <label class="field">
+        <span>公网地址（可选）</span>
+        <input id="room-edit-public-url" placeholder="https://xxx.sakurafrp.com" autocomplete="off">
+      </label>
+      <p class="muted small">端口和公网地址是整台主机的设置，会影响所有房间；改端口后页面会跳到新地址。</p>
+      <div class="modal-actions">
+        <button id="room-edit-cancel" type="button" class="ghost">取消</button>
+        <button id="room-edit-save" type="button" class="primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="context-help-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="context-help-heading">
+      <h2 id="context-help-heading">AI 每次读多少历史？</h2>
+      <ul class="tip-list">
+        <li><strong>最近 30 条</strong>：默认，便宜、够日常；长局会忘掉早期细节。</li>
+        <li><strong>最近 100 条</strong>：记得更久，token 大约 3 倍。</li>
+        <li><strong>全部历史</strong>：每轮把整段对话重新发送，长局会非常贵；适合短篇、调试或精读。</li>
+      </ul>
+      <p class="muted small">
+        这里只决定「发给模型多少条」。房间消息永远全部保存在房主本机，不受影响；改动只对**新建**的房间生效。
+      </p>
+      <div class="modal-actions">
+        <button id="context-help-close" type="button" class="primary">知道了</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="create-tip-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="create-tip-heading">
+      <h2 id="create-tip-heading">开房前，先确认朋友怎么进来</h2>
+      <p class="muted small">房间只跑在你这台机器上，能不能连上取决于网络。</p>
+      <ul class="tip-list">
+        <li><strong>同一个 Wi-Fi / 手机热点</strong>：直接用「复制邀请链接」里的「局域网」地址。</li>
+        <li><strong>不在同一网络</strong>：组虚拟局域网（蒲公英 / ZeroTier / Tailscale），用虚拟 IP 走 http 访问。</li>
+        <li><strong>想公网直接开</strong>：cpolar / cloudflared 这类 https 穿透，把域名填进「公网地址」。</li>
+        <li><strong>樱花</strong>：TCP 隧道会被拦成 501（HTTP 明文），HTTP 隧道需要先备案，不建议临时联机用。</li>
+      </ul>
+      <label class="check-row">
+        <input type="checkbox" id="create-tip-remember">
+        <span>下次不再提示</span>
+      </label>
+      <div class="modal-actions">
+        <button id="create-tip-cancel" type="button" class="ghost">取消</button>
+        <button id="create-tip-go" type="button" class="primary">继续创建</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="brand-footer">由 B站：喵诺澪染 制作 · 开源免费 · 禁止倒卖</footer>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script src="/room-assets/dialog.js" defer></script>
+  <script src="/room-assets/host.js" defer></script>
+</body>
+</html>

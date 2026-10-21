@@ -1,0 +1,21 @@
+# dsh-galgame-room bundle patch
+# 把房间插件挂进 DSH 配置树。entry id 必须与 src/index.js 的 name 一致。
+- insert:
+    - id: galgame-room
+      name: 'dsh-galgame-room'
+      # 端口 / 最大人数 / 选择性发言的防抖窗口都可以在这里改，改完重启生效。
+      # 7301 在本机被系统保留（bind 报 EACCES / EADDRINUSE，netstat 不可见），
+      # 所以默认落在 7302；换一台机器可以改回 7301 或任意空闲端口。
+      config:
+        port: 7302
+        hostname: '0.0.0.0'
+        maxPlayers: 4
+        debounceMs: 1200
+        contextMessages: 30
+        aiName: '旁白'
+        # true = 进房必须携带 clientVersion 且与房主版本一致（浏览器直连会被拒）；
+        # 默认 false，只有「联机模式」标签页里的连接会带上版本。
+        strictVersion: false
+        # 公网地址（樱花 frp / 反代后的域名，如 https://xxx.sakurafrp.com）；
+        # 留空 = 用页面当前 origin。填了之后「复制邀请链接」优先用它。
+        publicUrl: ''
