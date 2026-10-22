@@ -19,6 +19,24 @@ mkdirSync(join(workDir, 'rooms'), { recursive: true })
 
 const port = Number(process.env.AGENTS_TEST_PORT || 7376)
 const systems = []
+let autoSpeak = false
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+async function waitFor(fn, timeoutMs, label) {
+  const start = Date.now()
+  let last
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const value = await fn()
+      if (value) return value
+    } catch (error) {
+      last = error
+    }
+    await sleep(80)
+  }
+  throw new Error(`超时：${label}${last ? '（' + last.message + '）' : ''}`)
+}
 
 const server = createRoomServer({
   port,
@@ -29,6 +47,8 @@ const server = createRoomServer({
   generate: async ({ system }) => {
     systems.push(system)
     if (system.includes('角色代理')) return JSON.stringify({ line: '她想问：你为什么会在这里？', location: '电影院', plan: '看完电影去吃夜宵' })
+    if (system.includes('接下来由子代理')) return '（B）……你终于来了。'
+    if (autoSpeak) return '（旁白）门轴响了一声。\n<speak B>'
     return '（B）……你终于来了。'
   },
 })
@@ -199,6 +219,31 @@ try {
   assert.equal(agent.location, '电影院')
   assert.match(agent.plan, /吃夜宵/)
   console.log('代理状态落存档 OK')
+
+  // 主代理自动点名：回复里带 <speak B> → 剥掉标记 → 自动让 B 接一句
+  const systemStart = systems.length
+  autoSpeak = true
+  await api(`/api/rooms/${roomId}/advance`, { method: 'POST', token: created.gm.token })
+  const auto = await waitFor(
+    async () => {
+      const data = await api(`/api/rooms/${roomId}/messages?since=0&t=${created.inviteToken}`)
+      const main = data.messages.find((message) => message.text.includes('门轴响了一声'))
+      if (!main) return null
+      const index = data.messages.indexOf(main)
+      const after = data.messages
+        .slice(index + 1)
+        .find((message) => message.name === 'B' && message.kind === 'ai')
+      return after ? { main, after } : null
+    },
+    5000,
+    '主代理自动点名',
+  )
+  assert.equal(auto.main.text.includes('<speak'), false, '指令标记不应显示在消息里')
+  assert.equal(auto.after.name, 'B')
+  const autoSystems = systems.slice(systemStart)
+  assert.ok(autoSystems.some((system) => system.includes('【你的子代理】')))
+  assert.ok(autoSystems.some((system) => system.includes('接下来由子代理「B」接话')))
+  console.log('主代理 <speak B> 自动点名 OK')
 
   console.log('\n全部通过 ✓')
 } finally {

@@ -18,6 +18,7 @@
     packMode: $('pack-mode'),
     modeHint: $('mode-hint'),
     packIntro: $('pack-intro'),
+    packTruth: $('pack-truth'),
     playersMin: $('players-min'),
     playersMax: $('players-max'),
     singlePlayer: $('single-player'),
@@ -58,8 +59,8 @@
 
   const MODE_HINTS = {
     roleplay: '自由对话，AI 扮演人物推进剧情（默认）。',
-    soup: '玩家提问，AI 只答「是 / 不是 / 无关」，汤底由 GM 揭晓。',
-    mystery: '分阶段推进（阅读 → 自我介绍 → 搜证 → 讨论 → 投票 → 复盘），秘密只发给对应玩家（私聊能力后续版本）。',
+    soup: '玩家提问，AI 只答「是 / 不是 / 无关」，汤底由 GM 揭晓；汤底不会发给玩家。',
+    mystery: '分阶段推进（阅读 → 自我介绍 → 搜证 → 讨论 → 投票 → 复盘）；人物卡里的「秘密」只发给扮演者与 GM。',
     other: '自定义玩法，把规则写进人物的「守则」里。',
   }
 
@@ -80,6 +81,7 @@
     els.packDesc,
     els.scenario,
     els.packIntro,
+    els.packTruth,
     els.playersMin,
     els.playersMax,
   ]) {
@@ -113,6 +115,7 @@
       gender: '',
       playedBy: 'ai',
       playerBrief: '',
+      secret: '',
       avatar: '',
       description: '',
       personality: '',
@@ -199,6 +202,7 @@
         mode: els.packMode.value,
         scenario: els.scenario.value,
         intro: els.packIntro.value,
+        truth: els.packTruth.value,
         playersMin: els.playersMin.value,
         playersMax: els.playersMax.value,
         singlePlayer: els.singlePlayer.checked,
@@ -240,6 +244,7 @@
     els.packMode.value = pack.mode || 'roleplay'
     els.scenario.value = pack.scenario || ''
     els.packIntro.value = pack.intro || ''
+    els.packTruth.value = pack.truth || ''
     els.playersMin.value = pack.playersMin || '2'
     els.playersMax.value = pack.playersMax || '4'
     els.singlePlayer.checked = pack.singlePlayer === true
@@ -354,6 +359,7 @@
         ['firstMes', '开场白', 'textarea'],
         ['rules', '守则', 'textarea'],
         ['playerBrief', '玩家须知（人类扮演时给该玩家看）', 'textarea'],
+        ['secret', '角色本 / 秘密（只给扮演者与 GM 看）', 'textarea'],
         ['likes', '喜爱', 'textarea'],
         ['favoritePlaces', '常去地点', 'places'],
         ['behavior', '行为细节', 'textarea'],
@@ -1193,6 +1199,7 @@
         gender: character.gender || '',
         playedBy: character.playedBy || 'ai',
         playerBrief: character.playerBrief.trim(),
+        secret: (character.secret || '').trim(),
         likes: character.likes.trim(),
         favoritePlaces: Array.isArray(character.favoritePlaces) ? character.favoritePlaces : [],
         description: character.description.trim(),
@@ -1243,6 +1250,7 @@
       version: els.packVersion.value.trim() || '1.0.0',
       mode: els.packMode.value || 'roleplay',
       intro: els.packIntro.value.trim(),
+      truth: els.packTruth.value.trim(),
       recommendedPlayers: els.singlePlayer.checked
         ? { min: 1, max: 1 }
         : {

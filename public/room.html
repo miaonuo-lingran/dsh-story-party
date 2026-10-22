@@ -63,6 +63,7 @@
             <span class="only-desktop">头像</span>
           </button>
           <input type="file" id="avatar-file" accept="image/*" hidden>
+          <button id="roles-btn" class="ghost" type="button" hidden>角色本</button>
           <button id="copy-invite" class="ghost" type="button">复制邀请链接</button>
           <button id="toggle-members" class="ghost only-mobile" type="button">参与者</button>
         </div>
@@ -70,6 +71,10 @@
 
       <main class="room-main">
         <section class="chat">
+          <div id="phase-bar" class="phase-bar" hidden>
+            <span id="phase-text" class="phase-text"></span>
+            <button id="phase-next" class="mini primary" type="button">下一阶段</button>
+          </div>
           <div id="messages" class="messages" role="log" aria-live="polite"></div>
           <div id="thinking" class="thinking" hidden>
             <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -82,6 +87,7 @@
             <button id="vote-cancel" class="mini danger-mini" type="button">取消投票</button>
           </div>
           <form id="composer" class="composer">
+            <select id="composer-to" class="composer-to" aria-label="私聊对象" hidden></select>
             <input id="composer-input" maxlength="500" autocomplete="off" placeholder="说点什么…（Enter 发送）" aria-label="发言">
             <button type="submit" id="send" class="primary">发送</button>
           </form>
@@ -102,6 +108,7 @@
               <select id="agent-select"></select>
             </div>
             <button id="speak-agent" class="ghost block" type="button" hidden>让她接话</button>
+            <button id="truth-btn" class="ghost block" type="button" hidden>查看汤底 / 真相</button>
             <button id="start-vote" class="ghost block" type="button" hidden>发起揭晓投票</button>
             <button id="close-room" class="danger block" type="button">关闭房间</button>
             <p class="muted small">推进 = 跳过等待，让旁白立刻往下写。</p>
@@ -128,6 +135,26 @@
       <ul id="link-list" class="link-list"></ul>
       <p id="link-hint" class="muted small" hidden></p>
       <button id="link-close" class="ghost block" type="button">取消</button>
+    </div>
+  </div>
+
+  <!-- 角色本 / 角色分配 -->
+  <div id="roles-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="roles-title">
+      <h2 id="roles-title">角色本</h2>
+      <p id="roles-hint" class="muted small">角色本只有你（和 GM）能看到，不会出现在公开消息里。</p>
+      <ul id="roles-list" class="roles-list"></ul>
+      <button id="roles-close" class="ghost block" type="button">关闭</button>
+    </div>
+  </div>
+
+  <!-- 汤底 / 真相（仅 GM） -->
+  <div id="truth-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="truth-title">
+      <h2 id="truth-title">汤底 / 真相</h2>
+      <p class="muted small">只有你能看到；AI 知道它，但不会在揭晓前说出来。</p>
+      <pre id="truth-text" class="truth-text"></pre>
+      <button id="truth-close" class="ghost block" type="button">关闭</button>
     </div>
   </div>
 

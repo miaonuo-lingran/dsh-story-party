@@ -6,15 +6,37 @@
 
 联机 Galgame：**房间 API + 房间独立 LLM 会话 + 广播 + 可直接打开的网页房间**。
 阶段 1（服务端）与阶段 2（房间页）已完成；阶段 3（与 galgame 舞台结合）未开始。
+v0.2.0 起支持：**剧本杀（角色本 + 私聊 + 阶段机）、海龟汤私有汤底、主代理自动点名子代理**。
 
 ```
 房间服务（本插件自己的端口，默认 7302）
    ├─ 房间生命周期：建房 / 凭邀请令牌加入 / 职位 / 踢人 / 关闭
    ├─ 共享消息流：用户与 AI 的消息同一条 seq，SSE 广播 + ?since= 增量拉取
+   ├─ 私聊：剧本杀里玩家 ↔ GM 的私密消息，第三方与 SSE 都收不到
    ├─ 发言调度：玩家/GM 发言防抖合并成一轮，AI 自己判断接不接话（<silent>）
+   ├─ 角色本：每个角色一份 secret，只下发给扮演者与 GM
+   ├─ 阶段机：阅读 → 自我介绍 → 搜证 → 讨论 → 投票 → 复盘
    ├─ 房间页：/room/<房号>?t=<邀请令牌>，浏览器直接进
    └─ 房间独立上下文：每个房间一份 system + 消息历史，sessionId = galgame-room:<房号>
 ```
+
+## 截图
+
+剧本杀角色本（玩家只能看到自己那份）：
+
+![剧本杀角色本](https://raw.githubusercontent.com/miaonuo-lingran/dsh-story-party/main/docs/screenshots/mystery-rolebook.png)
+
+GM 视角：能看全部角色本、指派角色：
+
+![GM 角色本](https://raw.githubusercontent.com/miaonuo-lingran/dsh-story-party/main/docs/screenshots/gm-rolebooks.png)
+
+私聊只发给 GM，第三方看不到：
+
+![私聊](https://raw.githubusercontent.com/miaonuo-lingran/dsh-story-party/main/docs/screenshots/mystery-private.png)
+
+海龟汤汤底只有 GM 能打开：
+
+![汤底](https://raw.githubusercontent.com/miaonuo-lingran/dsh-story-party/main/docs/screenshots/soup-truth.png)
 
 ## 安装
 
@@ -71,6 +93,8 @@ scripts/acceptance.ps1   一键验收脚本
 scripts/smoke-events.mjs 无浏览器的页面契约冒烟测试
 scripts/card-test.mjs    cosplay 人设卡集成测试
 scripts/pack-test.mjs    剧情包导入 / 建房 / zip-slip 测试
+scripts/mystery-test.mjs 剧本杀：角色本 / 私聊 / 阶段机 / 真相不泄露
+scripts/soup-test.mjs    海龟汤私有汤底：导入 / GM 接口 / 揭晓提示词
 scripts/check-els.mjs    前端 els 引用检查
 scripts/install-dsh.ps1 装进 profile 的脚本（复制式，备份 package.json）
 cordis.patch.yml     插件挂载声明 + 默认配置
@@ -178,14 +202,24 @@ story-pack.zip
   "version": "1.0.0",
   "author": "xxx",
   "description": "一句话简介",
+  "mode": "roleplay",
   "scenario": "scenario.md",
+  "truth": "汤底 / 完整真相（只有 GM 与 AI 能看到）",
   "characters": ["characters/1.json"],
   "assets": ["assets/bg.png"]
 }
 ```
 
 人物卡兼容酒馆 v2 字段：`name / emoji / description / personality / scenario / first_mes / mes_example / system_prompt / rules / behavior`。
+另外支持：
+
+- `secret`：**角色本 / 秘密**，只发给扮演该角色的玩家与 GM；不会出现在公开消息、房间公开信息或剧情包详情里
+- `playerBrief`：玩家须知，领取角色后可见
+- `playedBy`：`ai` / `human` / `either`；剧本杀里人类角色由玩家领取，AI 角色进子代理名册
+- `likes` / `favoritePlaces` / `relations`：喜爱、常去地点、人物关系
+
 建房时：包里的 `scenario` 当世界观，选中人物的卡当人设，`first_mes` 当开场白。
+`truth` 只存在房主主机的房间 JSON 与系统提示词里；列表 / 详情 / 房间公开接口只返回 `hasTruth`。
 
 ### 制作
 
@@ -252,6 +286,53 @@ story-pack.zip
 - 调用流程：**子代理只读自己的文档 + 摘要 + 上次之后的新消息**，输出意图要点 → **主代理**把它写成最终消息，署名该子代理
 - 每个子代理还记自己的**位置 `location`** 和**接下来的打算 `plan`**：子代理输出一行 JSON（`line` / `location` / `plan`），主代理在名册里能看到「她在哪、打算去哪」，用来决定该唤起谁
 - 位置和打算只存在子代理状态里（存档可查），不进公共消息流；主代理是上帝视角，名册里能看到全部代理的位置\n- 子代理的思考与思维链都不进消息流、不共享；人类扮演的角色不进名册
+
+### 主代理自动点名子代理
+
+剧情包里的 AI 角色除了 GM 手动「让她接话」，主代理也可以自己点名：
+
+- 系统提示词会告诉主代理：需要子代理开口时，在回复最后单独一行写 `<speak 角色名>`
+- 服务端把标记从正文里剥掉（玩家看不到），解析到角色名后自动走一轮
+  「子代理出意图 → 主代理定稿」，消息署名该子代理
+- 每轮最多自动点名一次，避免模型互相点名形成循环
+- 角色名可以写子代理的名字或 id；写错/找不到就只剥掉标记，不会报错
+- GM 手动点名的 `/speak` 仍然可用
+
+## 剧本杀：角色本 / 私聊 / 阶段机
+
+剧情包 `mode = "mystery"` 时，建房会自动进入剧本杀模式：
+
+- **角色本**：人物卡的 `secret` 只下发给扮演者与 GM；玩家领取角色后点右上角「角色本」查看。
+  一个成员同时只能持有一个角色；GM 可以在「角色本」弹窗里指派 / 释放，观众不能领取。
+- **私聊**：输入框左边的目标下拉框，玩家只能私聊 GM，GM 可以私聊任意成员。
+  私聊消息只有发送者、接收者与 GM 能看到：历史接口按身份过滤，SSE 只推给相关连接；
+  私聊**不进 AI 上下文**，不会被剧情复述。
+- **阶段机**：阅读 → 自我介绍 → 搜证 → 讨论 → 投票 → 复盘。房间页顶部显示当前阶段，
+  GM 点「下一阶段」推进；每次切换会发一条系统消息，并让 AI 用一句话交代阶段目标。
+  复盘阶段会把包里的 `truth`（完整真相）拼进系统提示词，但公开接口仍然不返回它。
+- 如果建房时选中的人类角色只是玩家位，AI 不会把这个角色变成自己的化身，而是当 GM / 旁白；
+  选中的是 AI 角色时，AI 仍然扮演它。
+
+相关接口：
+
+| 方法 | 路径 | 鉴权 | 说明 |
+|---|---|---|---|
+| GET | `/api/rooms/:id/roles` | 成员 | 角色名单 + 自己的角色本（GM 看全部） |
+| POST | `/api/rooms/:id/roles` | 成员 / GM | `claim` 领取 / `assign` 指派 / `release` 释放 |
+| POST | `/api/rooms/:id/phase` | GM | `next` 下一阶段 / `set` 指定阶段（`narrate:false` 不触发 AI） |
+| GET | `/api/rooms/:id/truth` | GM | 读取汤底 / 真相正文 |
+| POST | `/api/rooms/:id/messages` | 成员 | 带 `to: <成员id>` 时发私聊 |
+
+## 海龟汤私有汤底
+
+制作页的「汤底 / 真相」一栏会写进 `pack.json` 的 `truth`（也可以放 `truth.md`）：
+
+- AI 在系统提示词里能看到汤底，所以「是 / 不是 / 无关」答得准；
+- 但公开列表、详情、房间公开信息都只返回 `hasTruth`，玩家读不到正文；
+- 房主 / GM 在房间侧栏点「查看汤底 / 真相」才看得到；
+- 全员「揭晓投票」通过后，提示词会带上汤底原文，并要求 AI 按原文完整揭晓；
+- 揭晓之后公开接口仍然不返回汤底，避免玩家翻接口作弊。
+
 
 ## 长局自动摘要
 
@@ -334,7 +415,7 @@ AI 的上下文会从最近 `contextMessages` 条消息重建。
 | GET | `/api/cards` | 无 | cosplay 角色库（开房页人设卡下拉） |
 | GET | `/api/packs` | 无 | 已导入的剧情包列表 |
 | POST | `/api/packs` | 无 | 上传剧情包（body = zip 原始字节） |
-| GET | `/api/packs/:id` | 无 | 剧情包详情（含完整人物卡） |
+| GET | `/api/packs/:id` | 无 | 剧情包详情（不含 `truth` / `secret` / `playerBrief`） |
 | DELETE | `/api/packs/:id` | 无 | 删除剧情包 |
 | GET | `/make` | 无 | 剧情包制作页 |
 | POST | `/api/port` | 无 | 开放 / 切换本机端口（`{port}`，失败保持原端口） |
@@ -349,15 +430,19 @@ AI 的上下文会从最近 `contextMessages` 条消息重建。
 | GET | `/api/rooms/:id/members` | 邀请或成员 | 成员列表 |
 | PATCH | `/api/rooms/:id/members/:mid` | GM | 改职位（`player` / `spectator`） |
 | DELETE | `/api/rooms/:id/members/:mid` | GM | 踢人 |
-| POST | `/api/rooms/:id/messages` | 成员 | 发言（观众只进消息流、不进 AI 上下文） |
-| GET | `/api/rooms/:id/messages?since=0` | 邀请或成员 | 增量拉取历史 |
+| POST | `/api/rooms/:id/messages` | 成员 | 发言；带 `to: <成员id>` = 私聊（观众只进消息流、不进 AI 上下文） |
+| GET | `/api/rooms/:id/messages?since=0` | 邀请或成员 | 增量拉取历史（私聊按身份过滤） |
 | POST | `/api/rooms/:id/advance` | GM | 强制 AI 推进一轮 |
 | POST | `/api/rooms/:id/speak` | GM | 点名子代理接话（`{agentId}`） |
+| GET | `/api/rooms/:id/roles` | 成员 | 角色名单 + 自己的角色本（GM 看全部） |
+| POST | `/api/rooms/:id/roles` | 成员/GM | `claim` / `assign` / `release` |
+| POST | `/api/rooms/:id/phase` | GM | 剧本杀阶段机：`next` / `set` |
+| GET | `/api/rooms/:id/truth` | GM | 汤底 / 真相正文 |
 | POST | `/api/rooms/:id/avatar` | 成员 | 上传自己的头像（内联图片 data URL） |
 | POST | `/api/rooms/:id/vote` | 成员/GM | 投票：`start` / `cast` / `cancel`（全员同意才通过） |
 | POST | `/api/rooms/:id/purge` | GM 或本机 | 永久删除房间（关闭只是打标记） |
 | POST | `/api/rooms/:id/leave` | 成员 | 主动离开 |
-| GET | `/api/rooms/:id/events?since=0` | 邀请或成员 | SSE：snapshot / message / members / ai / system |
+| GET | `/api/rooms/:id/events?since=0` | 邀请或成员 | SSE：snapshot / message / members / ai / system / vote / room / phase / roles |
 
 ### 最小 curl 流程
 
@@ -432,7 +517,7 @@ $env:npm_config_cache = 'dsh-story-party\.npm-cache'   # 可选：避免写系�
 npm pack --pack-destination .
 ```
 
-产物：`.\dsh-story-party-0.1.48.tgz`，共 31 个文件
+产物：`.\dsh-story-party-0.2.0.tgz`，共 41 个文件
 （`src/`、`public/`、`assets/`、`scripts/`、`cordis.patch.yml`、`README.md`、`package.json`）。
 
 包内已声明：
@@ -444,13 +529,13 @@ npm pack --pack-destination .
 导入方式二选一：
 
 1. **插件管理 → 安装插件**，在安装框里填本地包路径
-   `.\dsh-story-party-0.1.48.tgz`（插件管理器支持 registry / path / git / tarball
+   `.\dsh-story-party-0.2.0.tgz`（插件管理器支持 registry / path / git / tarball
    四类来源），装完重启 DSH；
 2. **命令行**（插件管理器不可用时）：
 
    ```powershell
    cd $env:USERPROFILE\.dsh\profiles\desktop
-   pnpm add file:F:/超分/.dshplugin/dsh-story-party-0.1.48.tgz
+   pnpm add file:F:/超分/.dshplugin/dsh-story-party-0.2.0.tgz
    ```
 
    然后把 `dsh-story-party` 加进 `package.json` 的 `dsh.profile.bundles`，重启 DSH。
@@ -472,6 +557,47 @@ npm pack --pack-destination .
 | `strictVersion` | false | true = 进房必须带 `clientVersion` 且与房主插件版本一致（浏览器直连会被拒） |
 | `provider` / `model` | 空 | 留空跟随当前对话模型；填了优先用 |
 
+## 测试清单（不需要浏览器）
+
+```powershell
+cd dsh-story-party
+
+# 纯前端 / 契约
+node scripts/check-els.mjs
+node scripts/client-sim.mjs
+
+# 服务端（各自起临时端口，跑完自动清理）
+$env:CARD_TEST_PORT=7341;      node scripts/card-test.mjs
+$env:PACK_TEST_PORT=7342;      node scripts/pack-test.mjs
+$env:VERSION_TEST_PORT=7343;   node scripts/version-test.mjs
+$env:PASSWORD_TEST_PORT=7344;  node scripts/password-test.mjs
+$env:AVATAR_TEST_PORT=7345;    node scripts/avatar-test.mjs
+$env:VOTE_TEST_PORT=7347;      node scripts/vote-test.mjs
+$env:AGENTS_TEST_PORT=7348;    node scripts/agents-test.mjs
+$env:CONTEXT_TEST_PORT=7349;   node scripts/context-test.mjs
+$env:SUMMARY_TEST_PORT=7350;   node scripts/summary-test.mjs
+$env:REASONING_TEST_PORT=7351; node scripts/reasoning-test.mjs
+$env:MYSTERY_TEST_PORT=7372;   node scripts/mystery-test.mjs
+$env:SOUP_TEST_PORT=7374;      node scripts/soup-test.mjs
+$env:HOSTSIM_PORT=7360;        node scripts/host-sim.mjs
+```
+
+`smoke-events.mjs` 需要先起 standalone：
+
+```powershell
+$env:GALGAME_ROOM_PORT=7340
+$env:GALGAME_ROOM_DATA='.smoketest\rooms'
+node src/standalone.js
+# 另开一个窗口：
+$env:GALGAME_ROOM_BASE='http://127.0.0.1:7340'; node scripts/smoke-events.mjs
+```
+
+真模型链路（对着已装进 DSH 的插件，默认 7302）：
+
+```powershell
+$env:GALGAME_ROOM_BASE='http://127.0.0.1:7302'; node scripts/live-check.mjs
+```
+
 ## 已知限制
 
 - standalone 的模型是 **mock**，只用于 API 自检；真实模型要装进 DSH 后走 `ctx.llm`；
@@ -480,7 +606,11 @@ npm pack --pack-destination .
 - 观众能看到全部消息，但发言不进 AI 上下文——这是「观众位永不触发 LLM」的落点；
 - 消息限流按 IP：默认 10 条/秒，超出返回 429；
 - 房间页一次渲染全部历史，几百条以内没问题，再长要做虚拟滚动；
-- 同一局域网里谁都能打开 `/` 自己建房；公网上线前要先加访问控制（阶段 3）。
+- 同一局域网里谁都能打开 `/` 自己建房；公网上线前要先加访问控制（阶段 3）；
+- 私聊的 UI 只在剧本杀模式出现；服务端本身支持任意房间发 `to`，但其他模式默认不显示目标下拉框；
+- 角色本、汤底 / 真相在房主主机的房间 JSON 里是明文（只存在本机），不是端到端加密；
+- 剧本杀阶段机目前是 GM 手动推进，没有计时器、自动搜证或玩家投票锁；
+- 插件市场提交尚未完成（npm 包与 GitHub 仓库已就绪）。
 
 ## 阶段 3 预留
 

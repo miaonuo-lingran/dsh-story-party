@@ -95,14 +95,27 @@
     thinking: $('thinking'),
     composer: $('composer'),
     composerInput: $('composer-input'),
+    composerTo: $('composer-to'),
     send: $('send'),
     composerHint: $('composer-hint'),
+    phaseBar: $('phase-bar'),
+    phaseText: $('phase-text'),
+    phaseNext: $('phase-next'),
     voteBar: $('vote-bar'),
     voteText: $('vote-text'),
     voteAgree: $('vote-agree'),
     voteDisagree: $('vote-disagree'),
     voteCancel: $('vote-cancel'),
     startVote: $('start-vote'),
+    truthBtn: $('truth-btn'),
+    truthModal: $('truth-modal'),
+    truthText: $('truth-text'),
+    truthClose: $('truth-close'),
+    rolesBtn: $('roles-btn'),
+    rolesModal: $('roles-modal'),
+    rolesList: $('roles-list'),
+    rolesHint: $('roles-hint'),
+    rolesClose: $('roles-close'),
     agentField: $('agent-field'),
     agentSelect: $('agent-select'),
     speakAgent: $('speak-agent'),
@@ -475,7 +488,18 @@
     els.messages.textContent = ''
     state.seen.clear()
     state.lastSeq = 0
-    for (const message of cache.messages) addMessage(message)
+    const mine = state.member
+    for (const message of cache.messages) {
+      // 本地副本可能是同一台机器上一任 GM/玩家留下的：私聊只显示与自己有关的
+      if (
+        message.private &&
+        !(mine && mine.role === 'gm') &&
+        !(mine && (message.memberId === mine.id || message.to === mine.id))
+      ) {
+        continue
+      }
+      addMessage(message)
+    }
     if (cache.messages.length > 0) scrollToBottom()
   }
 
@@ -506,6 +530,10 @@
     els.membersPanel.hidden = solo
     const soup = Boolean(state.room.pack && state.room.pack.mode === 'soup')
     els.startVote.hidden = !(isGm() && soup)
+    els.truthBtn.hidden = !(isGm() && state.room.hasTruth)
+    els.rolesBtn.hidden = !(Array.isArray(state.room.cast) && state.room.cast.length > 0)
+    renderPhase()
+    renderComposerTarget()
     renderAgents()
     renderVote()
     if (state.member) {
@@ -522,8 +550,65 @@
       els.composerHint.textContent = ''
       return
     }
+    const privateTo = els.composerTo.value
+    if (privateTo) {
+      const target = ((state.room && state.room.members) || []).find((item) => item.id === privateTo)
+      els.composerHint.textContent = `私聊${target ? '给「' + target.name + '」' : ''}：只有你们和 GM 能看到，不会进入 AI 剧情上下文。`
+      return
+    }
     els.composerHint.textContent =
       state.member.role === 'spectator' ? '观众发言会出现在消息流里，但不会进入 AI 的剧情上下文。' : ''
+  }
+
+  function renderPhase() {
+    const phase = state.room && state.room.phase
+    if (!phase) {
+      els.phaseBar.hidden = true
+      return
+    }
+    els.phaseBar.hidden = false
+    els.phaseText.textContent = `阶段 ${phase.index + 1}/${phase.total} · ${phase.label}`
+    els.phaseNext.hidden = !isGm()
+    els.phaseNext.disabled = phase.index >= phase.total - 1
+  }
+
+  function renderComposerTarget() {
+    const room = state.room
+    const visible = Boolean(
+      room &&
+        state.member &&
+        room.mode === 'mystery' &&
+        Array.isArray(room.cast) &&
+        room.cast.length > 0,
+    )
+    const previous = els.composerTo.value
+    els.composerTo.textContent = ''
+    if (!visible) {
+      els.composerTo.hidden = true
+      updateComposerHint()
+      return
+    }
+    const addOption = (value, label) => {
+      const option = document.createElement('option')
+      option.value = value
+      option.textContent = label
+      els.composerTo.append(option)
+    }
+    addOption('', '公开')
+    if (isGm()) {
+      for (const member of room.members || []) {
+        if (!member || member.role === 'gm' || member.id === state.member.id) continue
+        addOption(member.id, `私聊 · ${member.name}`)
+      }
+    } else {
+      const gm = (room.members || []).find((member) => member.role === 'gm')
+      if (gm) addOption(gm.id, '私聊 GM')
+    }
+    els.composerTo.hidden = els.composerTo.options.length <= 1
+    if (previous && Array.from(els.composerTo.options).some((option) => option.value === previous)) {
+      els.composerTo.value = previous
+    }
+    updateComposerHint()
   }
 
   function connect() {
@@ -543,6 +628,8 @@
     es.addEventListener('system', onSystemEvent)
     es.addEventListener('vote', onVoteEvent)
     es.addEventListener('room', onRoomEvent)
+    es.addEventListener('phase', onPhaseEvent)
+    es.addEventListener('roles', onRolesEvent)
   }
 
   function closeStream() {
@@ -614,6 +701,7 @@
         renderHeader()
       }
     }
+    renderComposerTarget()
     renderMembers()
   }
 
@@ -769,6 +857,213 @@
     if (data.closed) showClosed()
   }
 
+  function onPhaseEvent(event) {
+    let data
+    try {
+      data = JSON.parse(event.data)
+    } catch {
+      return
+    }
+    if (state.room && data.phase) state.room.phase = data.phase
+    renderPhase()
+    if (!els.rolesModal.hidden) void loadRoles()
+  }
+
+  function onRolesEvent(event) {
+    let data
+    try {
+      data = JSON.parse(event.data)
+    } catch {
+      return
+    }
+    if (state.room && Array.isArray(data.cast)) state.room.cast = data.cast
+    renderComposerTarget()
+    if (!els.rolesModal.hidden) void loadRoles()
+  }
+
+  // ---------- 角色本 / 阶段 / 汤底 ----------
+
+  async function loadRoles() {
+    if (!state.member) return
+    try {
+      const data = await api(roomPath('/roles'), { token: state.member.token })
+      state.roles = data
+      renderRoles()
+    } catch (error) {
+      els.rolesHint.textContent = error.message
+    }
+  }
+
+  function renderRoles() {
+    const data = state.roles
+    if (!data) return
+    els.rolesHint.textContent =
+      data.mode === 'mystery'
+        ? '剧本杀：领取一个角色才能看到对应的角色本；GM 可以指派。角色本不会出现在公开消息里。'
+        : '角色本只对扮演者与 GM 可见。'
+    els.rolesList.textContent = ''
+    for (const role of data.cast || []) {
+      const item = document.createElement('li')
+      item.className = 'role-card'
+
+      const head = document.createElement('div')
+      head.className = 'role-card-head'
+      const avatar = document.createElement('span')
+      avatar.className = 'avatar avatar-sm'
+      renderAvatar(avatar, { avatar: role.avatar, emoji: role.emoji, name: role.name })
+      const name = document.createElement('strong')
+      name.textContent = role.name
+      const status = document.createElement('span')
+      status.className = 'muted small'
+      if (role.assignee) status.textContent = role.mine ? '由你扮演' : `由 ${role.assignee.name} 扮演`
+      else status.textContent = role.playedBy === 'ai' ? 'AI 扮演' : '待认领'
+      head.append(avatar, name, status)
+      item.append(head)
+
+      if (isGm()) {
+        const row = document.createElement('div')
+        row.className = 'role-assign'
+        const label = document.createElement('span')
+        label.className = 'muted small'
+        label.textContent = '指派给'
+        const select = document.createElement('select')
+        select.className = 'mini'
+        const none = document.createElement('option')
+        none.value = ''
+        none.textContent = role.playedBy === 'ai' ? '（AI 固定）' : '未指派'
+        select.append(none)
+        for (const member of (state.room && state.room.members) || []) {
+          if (!member || member.role === 'gm') continue
+          const option = document.createElement('option')
+          option.value = member.id
+          option.textContent = member.name
+          select.append(option)
+        }
+        select.value = role.assignee ? role.assignee.id : ''
+        select.disabled = role.playedBy === 'ai'
+        select.addEventListener('change', () => void assignCharacter(role.id, select.value))
+        row.append(label, select)
+        item.append(row)
+      } else if (!role.mine && !role.assignee && role.playedBy !== 'ai') {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = 'mini primary'
+        button.textContent = '领取这个角色'
+        button.addEventListener('click', () => void claimCharacter(role.id))
+        item.append(button)
+      }
+
+      if ((role.mine || isGm()) && role.playerBrief) {
+        const brief = document.createElement('p')
+        brief.className = 'role-brief'
+        brief.textContent = role.playerBrief
+        item.append(brief)
+      }
+      if (role.mine && role.secret) {
+        const book = document.createElement('details')
+        book.className = 'role-book'
+        const summary = document.createElement('summary')
+        summary.textContent = '打开我的角色本'
+        const pre = document.createElement('pre')
+        pre.textContent = role.secret
+        book.append(summary, pre)
+        item.append(book)
+      }
+      if (isGm() && role.secret) {
+        const book = document.createElement('details')
+        book.className = 'role-book'
+        const summary = document.createElement('summary')
+        summary.textContent = role.mine ? '角色本' : 'GM 查看角色本'
+        const pre = document.createElement('pre')
+        pre.textContent = role.secret
+        book.append(summary, pre)
+        item.append(book)
+      }
+      if (role.mine && !isGm()) {
+        const release = document.createElement('button')
+        release.type = 'button'
+        release.className = 'mini'
+        release.textContent = '释放角色'
+        release.addEventListener('click', () => void releaseCharacter())
+        item.append(release)
+      }
+      els.rolesList.append(item)
+    }
+  }
+
+  async function claimCharacter(characterId) {
+    try {
+      state.roles = await api(roomPath('/roles'), {
+        method: 'POST',
+        token: state.member.token,
+        body: { action: 'claim', characterId },
+      })
+      renderRoles()
+      toast('角色已领取，角色本在下面')
+    } catch (error) {
+      toast(error.message, 'error')
+    }
+  }
+
+  async function assignCharacter(characterId, memberId) {
+    try {
+      state.roles = await api(roomPath('/roles'), {
+        method: 'POST',
+        token: state.member.token,
+        body: { action: 'assign', characterId, memberId: memberId || null },
+      })
+      renderRoles()
+    } catch (error) {
+      toast(error.message, 'error')
+    }
+  }
+
+  async function releaseCharacter() {
+    try {
+      state.roles = await api(roomPath('/roles'), {
+        method: 'POST',
+        token: state.member.token,
+        body: { action: 'release' },
+      })
+      renderRoles()
+    } catch (error) {
+      toast(error.message, 'error')
+    }
+  }
+
+  function openRoles() {
+    els.rolesModal.hidden = false
+    els.rolesHint.textContent = '正在读取角色本…'
+    void loadRoles()
+  }
+
+  async function openTruth() {
+    try {
+      const data = await api(roomPath('/truth'), { token: state.member.token })
+      els.truthText.textContent = data.truth || ''
+      els.truthModal.hidden = false
+    } catch (error) {
+      toast(error.message, 'error')
+    }
+  }
+
+  async function nextPhase() {
+    if (!isGm()) return
+    els.phaseNext.disabled = true
+    try {
+      const data = await api(roomPath('/phase'), {
+        method: 'POST',
+        token: state.member.token,
+        body: { action: 'next' },
+      })
+      if (state.room && data.phase) state.room.phase = data.phase
+      renderPhase()
+    } catch (error) {
+      toast(error.message, 'error')
+      renderPhase()
+    }
+  }
+
   function showClosed() {
     closeStream()
     fail('房间已关闭', '这场故事到这里就结束了。')
@@ -844,6 +1139,15 @@
       note.className = 'badge badge-spectator'
       note.textContent = '不进剧情'
       note.title = '观众发言不会进入 AI 上下文'
+      head.append(note)
+    }
+
+    if (message.private) {
+      article.classList.add('msg-private')
+      const note = document.createElement('span')
+      note.className = 'badge badge-private'
+      note.textContent = '私聊'
+      note.title = '私聊内容只有发送者、接收者和 GM 能看到'
       head.append(note)
     }
 
@@ -1016,13 +1320,16 @@
       return
     }
     els.send.disabled = true
+    const to = els.composerTo.value || ''
     try {
       await api(roomPath('/messages'), {
         method: 'POST',
         token: state.member.token,
-        body: { text },
+        body: { text, ...(to ? { to } : {}) },
       })
       els.composerInput.value = ''
+      els.composerTo.value = ''
+      updateComposerHint()
     } catch (error) {
       toast(error.message, 'error')
     } finally {
@@ -1143,6 +1450,22 @@
   els.linkModal.addEventListener('click', (event) => {
     if (event.target === els.linkModal) closeLinkModal()
   })
+  els.phaseNext.addEventListener('click', nextPhase)
+  els.rolesBtn.addEventListener('click', openRoles)
+  els.rolesClose.addEventListener('click', () => {
+    els.rolesModal.hidden = true
+  })
+  els.rolesModal.addEventListener('click', (event) => {
+    if (event.target === els.rolesModal) els.rolesModal.hidden = true
+  })
+  els.truthBtn.addEventListener('click', openTruth)
+  els.truthClose.addEventListener('click', () => {
+    els.truthModal.hidden = true
+  })
+  els.truthModal.addEventListener('click', (event) => {
+    if (event.target === els.truthModal) els.truthModal.hidden = true
+  })
+  els.composerTo.addEventListener('change', updateComposerHint)
   els.advance.addEventListener('click', advance)
   els.closeRoom.addEventListener('click', closeRoom)
   els.toggleMembers.addEventListener('click', () => document.body.classList.toggle('members-open'))
@@ -1150,6 +1473,8 @@
     if (event.key === 'Escape') {
       document.body.classList.remove('members-open')
       closeLinkModal()
+      els.rolesModal.hidden = true
+      els.truthModal.hidden = true
     }
   })
 

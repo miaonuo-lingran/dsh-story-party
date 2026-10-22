@@ -115,6 +115,42 @@ const PACK_MODE_RULES = {
   other: '',
 }
 
+/** 剧本杀阶段机：id 写进存档，label 显示给玩家，rule 拼进系统提示词 */
+const MYSTERY_PHASES = [
+  {
+    id: 'reading',
+    label: '阅读',
+    rule: '玩家在阅读自己的角色本。不要推进剧情，也不要要求他们立刻发言；可以简短说明本阶段要做什么。',
+  },
+  {
+    id: 'intro',
+    label: '自我介绍',
+    rule: '引导每位玩家以角色身份做自我介绍，一次只点一个人；不要替玩家说。',
+  },
+  {
+    id: 'search',
+    label: '搜证',
+    rule: '按玩家声明的地点或对象给出线索；线索要具体、可追问，但不要直接说出真相或其他人的秘密。',
+  },
+  {
+    id: 'discuss',
+    label: '讨论',
+    rule: '让玩家互相质询、交换线索；你可以补充环境细节，但不要替他们推理出结论。',
+  },
+  {
+    id: 'vote',
+    label: '投票',
+    rule: '请所有玩家公开指认凶手并说明理由；先收集完所有人的票，再进入复盘。',
+  },
+  {
+    id: 'review',
+    label: '复盘',
+    rule: '完整讲出真相：凶手、动机、手法、时间线，以及每条线索指向什么；可以指出玩家漏掉的伏笔。',
+  },
+]
+const MYSTERY_PHASE_IDS = new Set(MYSTERY_PHASES.map((phase) => phase.id))
+const MYSTERY_PHASE_LABEL = Object.fromEntries(MYSTERY_PHASES.map((phase) => [phase.id, phase.label]))
+
 function newId() {
   return randomBytes(9).toString('base64url')
 }
@@ -194,7 +230,40 @@ function publicMember(member) {
     joinedAt: member.joinedAt,
     uid: member.uid ?? null,
     avatar: typeof member.avatar === 'string' && member.avatar ? member.avatar : null,
+    characterId: member.characterId ?? null,
   }
+}
+
+/** 剧本杀角色名单的公开形态：谁扮演谁可见，角色本内容绝不出现 */
+function publicCast(room) {
+  return (room.cast || []).map((character) => {
+    const assignee = character.assigneeId ? room.members[character.assigneeId] : null
+    return {
+      id: character.id,
+      name: character.name,
+      emoji: character.emoji || '',
+      avatar: character.avatar || null,
+      gender: character.gender || '',
+      playedBy: character.playedBy || 'ai',
+      assignee: assignee ? { id: assignee.id, name: assignee.name } : null,
+    }
+  })
+}
+
+/** 当前阶段（只有剧本杀有阶段机） */
+function publicPhase(room) {
+  if ((room.mode || 'roleplay') !== 'mystery') return null
+  const index = MYSTERY_PHASES.findIndex((phase) => phase.id === room.phase)
+  const phase = MYSTERY_PHASES[index >= 0 ? index : 0]
+  return { id: phase.id, label: phase.label, index: index >= 0 ? index : 0, total: MYSTERY_PHASES.length }
+}
+
+/** 私聊消息只给发送者、接收者和 GM 看 */
+function messageVisibleTo(message, memberId, role) {
+  if (!message || message.private !== true) return true
+  if (role === 'gm') return true
+  if (!memberId) return false
+  return message.memberId === memberId || message.to === memberId
 }
 
 /** 投票的公开形态：谁投了什么、几票同意 / 共几人（观众也算，全都同意才过） */
@@ -223,6 +292,10 @@ function publicRoom(room) {
     maxPlayers: room.maxPlayers,
     seq: room.seq,
     hasPassword: Boolean(room.password),
+    mode: room.mode || room.pack?.mode || 'roleplay',
+    phase: publicPhase(room),
+    cast: publicCast(room),
+    hasTruth: Boolean(room.truth),
     ai: { status: room.ai.status, lastError: room.ai.lastError ?? null },
     aiName: room.aiName ?? null,
     persona: room.persona
@@ -266,6 +339,8 @@ function personaFromCard(card) {
       ? text(card.playedBy, 8)
       : 'ai',
     playerBrief: text(card.playerBrief, 2000),
+    /** 角色本 / 秘密：只给扮演该角色的玩家与 GM 看，绝不进公开消息 */
+    secret: text(card.secret ?? card.characterBook ?? card.character_book, 6000),
     likes: text(card.likes, 2000),
     favoritePlaces: Array.isArray(card.favoritePlaces)
       ? card.favoritePlaces
@@ -322,6 +397,11 @@ function packSummary(pack) {
     mode: pack.mode || 'roleplay',
     intro: pack.intro || '',
     recommendedPlayers: pack.recommendedPlayers || { min: 2, max: 4 },
+    /** 汤底只告诉房主 / GM，列表里只暴露「有没有」 */
+    hasTruth: Boolean(pack.truth),
+    hasSecrets: (Array.isArray(pack.characters) ? pack.characters : []).some((character) =>
+      Boolean(character.secret),
+    ),
     mapCounts: {
       locations: Array.isArray(pack.map?.locations) ? pack.map.locations.length : 0,
       routes: Array.isArray(pack.map?.routes) ? pack.map.routes.length : 0,
@@ -365,6 +445,15 @@ function packFromFiles(files) {
   const scenarioPath =
     typeof meta.scenario === 'string' && meta.scenario !== '' ? meta.scenario : 'scenario.md'
   const scenario = map.has(scenarioPath) ? map.get(scenarioPath).toString('utf8').slice(0, 20000) : ''
+  // 海龟汤汤底 / 剧本杀真相：留给 GM 和 AI，公开列表只暴露 hasTruth
+  const truthBuffer = map.get(
+    typeof meta.truth === 'string' && meta.truth !== '' ? meta.truth : 'truth.md',
+  )
+  const truth = (
+    truthBuffer ? truthBuffer.toString('utf8') : typeof meta.truth === 'string' ? meta.truth : ''
+  )
+    .trim()
+    .slice(0, 20000)
 
   const characters = []
   const paths = Array.isArray(meta.characters) ? meta.characters : []
@@ -462,6 +551,7 @@ function packFromFiles(files) {
     brand: String(meta.brand ?? '').slice(0, 40),
     description: String(meta.description ?? '').slice(0, 300),
     scenario,
+    truth,
     characters,
     assets,
     map: packMap,
@@ -470,7 +560,16 @@ function packFromFiles(files) {
 
 /** 落盘时剔除运行期字段（_timer / _saveChain 等以下划线开头的东西） */
 function serializeRoom(room) {
-  const { _timer, _saveChain, _dirty, _force, ...rest } = room
+  const {
+    _timer,
+    _saveChain,
+    _dirty,
+    _force,
+    _phaseDirective,
+    _summarizing,
+    _reveal,
+    ...rest
+  } = room
   return rest
 }
 
@@ -645,8 +744,16 @@ export function createRoomServer(options = {}) {
     const run = async () => {
       const file = join(cfg.dataDir, room.id + '.json')
       const tmp = file + '.tmp'
-      await writeFile(tmp, JSON.stringify(serializeRoom(room), null, 2), 'utf8')
-      await rename(tmp, file)
+      try {
+        await writeFile(tmp, JSON.stringify(serializeRoom(room), null, 2), 'utf8')
+        await rename(tmp, file)
+      } catch (error) {
+        // 写盘失败（磁盘满 / 目录被删 / 权限）不能把宿主进程带崩：
+        // 内存里的房间仍然可用，下次成功写盘会覆盖。
+        console.warn(
+          `[galgame-room] 房间 ${room.id} 写盘失败：${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
     }
     // 每房间串行写盘，避免并发 rename 交错
     room._saveChain = (room._saveChain ?? Promise.resolve()).then(run, run)
@@ -719,6 +826,7 @@ export function createRoomServer(options = {}) {
       brand: built.brand || '',
       description: built.description,
       scenario: built.scenario,
+      truth: built.truth || '',
       characters: built.characters,
       map: built.map,
       assets: built.assets,
@@ -743,10 +851,13 @@ export function createRoomServer(options = {}) {
 
   // ---- 广播 ---------------------------------------------------------------
 
-  function broadcast(roomId, event, data) {
+  function broadcast(roomId, event, data, filter) {
     const set = clients.get(roomId)
     if (!set || set.size === 0) return
-    for (const res of set) writeSse(res, event, data)
+    for (const client of set) {
+      if (filter && !filter(client)) continue
+      writeSse(client.res, event, data)
+    }
   }
 
   function broadcastMembers(room) {
@@ -756,9 +867,9 @@ export function createRoomServer(options = {}) {
   function closeRoomStreams(roomId) {
     const set = clients.get(roomId)
     if (!set) return
-    for (const res of set) {
+    for (const client of set) {
       try {
-        res.end()
+        client.res.end()
       } catch {
         /* ignore */
       }
@@ -810,9 +921,15 @@ export function createRoomServer(options = {}) {
       text: String(data.text ?? ''),
       ts: nowMs(),
       inAiContext: data.inAiContext !== false,
+      private: data.private === true,
+      to: data.to ?? null,
     }
     room.messages.push(message)
-    broadcast(room.id, 'message', { message })
+    broadcast(room.id, 'message', { message }, (client) => {
+      if (!message.private) return true
+      const member = client.memberId ? room.members[client.memberId] : null
+      return messageVisibleTo(message, client.memberId, member ? member.role : null)
+    })
     return message
   }
 
@@ -835,11 +952,14 @@ export function createRoomServer(options = {}) {
     broadcast(room.id, 'vote', { vote: publicVote(room) })
   }
 
-  function buildSystemPrompt(room, force, reveal) {
+  function buildSystemPrompt(room, force, reveal, phaseDirective = '') {
     const roster = Object.values(room.members)
       .map((m) => `- ${m.name}（${roleLabel(m.role)}）`)
       .join('\n')
     const persona = room.persona
+    const mode = room.mode || room.pack?.mode || 'roleplay'
+    const phase = publicPhase(room)
+    const phaseRule = phase ? MYSTERY_PHASES.find((item) => item.id === phase.id)?.rule || '' : ''
     const head = []
     if (persona) {
       const genderLabel = { female: '女', male: '男', other: '其他' }[persona.gender] || ''
@@ -863,12 +983,38 @@ export function createRoomServer(options = {}) {
     } else {
       head.push(`你正在主持一场多人联机的文字冒险（Galgame 风格）。你是这个房间的${cfg.aiName}。`)
     }
+    const cast = Array.isArray(room.cast) ? room.cast : []
     const base = [
       ...head,
       '',
       `【房间】${room.title}`,
       '【参与者】',
       roster || '（暂无）',
+      ...(mode === 'mystery' && cast.length > 0
+        ? [
+            '',
+            '【角色与扮演者】',
+            ...cast.map((character) => {
+              const assignee = character.assigneeId ? room.members[character.assigneeId] : null
+              const who =
+                character.playedBy === 'ai'
+                  ? '（AI 扮演）'
+                  : assignee
+                    ? `（由 ${assignee.name} 扮演）`
+                    : '（暂无人扮演）'
+              return `- ${character.name}${who}`
+            }),
+          ]
+        : []),
+      ...(mode === 'mystery' && cast.some((character) => character.secret)
+        ? [
+            '',
+            '【角色本（最高机密，只有你知道；不要公开别人的秘密）】',
+            ...cast
+              .filter((character) => character.secret)
+              .map((character) => `- ${character.name}：${character.secret}`),
+          ]
+        : []),
       '',
       '【世界观与设定】',
       room.scenario || cfg.defaultScenario,
@@ -901,8 +1047,26 @@ export function createRoomServer(options = {}) {
             '【你的子代理】',
             ...room.agents.map(
               (agent) =>
-                `- ${agent.name}（${agent.inScene ? '已在场' : '未上场'}${agent.location ? ` · 在${agent.location}` : ''}${agent.plan ? ` · 打算：${agent.plan}` : ''}）——由子代理扮演，你不要替她写台词；需要她说话时等 GM 点名。`,
+                `- ${agent.name}（${agent.inScene ? '已在场' : '未上场'}${agent.location ? ` · 在${agent.location}` : ''}${agent.plan ? ` · 打算：${agent.plan}` : ''}）——由子代理扮演，你不要替她写台词；需要她说话时用 <speak 角色名> 点她，或等 GM 点名。`,
             ),
+          ]
+        : []),
+      ...(room.truth && mode === 'soup'
+        ? [
+            '',
+            '【汤底（最高机密，只有你知道）】',
+            room.truth,
+            '在全员投票揭晓前，绝不能用任何方式直接或间接说出汤底；回答只能以「是」「不是」「无关」「无法回答」开头。',
+          ]
+        : []),
+      ...(room.truth && mode === 'mystery'
+        ? ['', '【真相（最高机密，复盘阶段才可完整讲出）】', room.truth]
+        : []),
+      ...(phase
+        ? [
+            '',
+            `【当前阶段】${phase.label}（${phase.index + 1}/${phase.total}）`,
+            phaseRule,
           ]
         : []),
       '',
@@ -912,19 +1076,36 @@ export function createRoomServer(options = {}) {
       '3. 选择性接话：玩家只是互相寒暄、闲聊、讨论与剧情无关的事时，你只输出 <silent>，不要输出任何其他内容。',
       '4. 只有剧情需要推进、玩家在向剧情或你提问、或玩家角色在等待回应时，才用自然的文字回应。',
       '5. 不解释规则、不自称 AI、不输出元信息。',
+      ...(Array.isArray(room.agents) && room.agents.length > 0
+        ? [
+            '6. 需要某个子代理开口时，在回复最后单独一行写 <speak 角色名>；系统会转给她，你不要替她写台词。这个标记不会显示给玩家。',
+          ]
+        : []),
+      ...(mode === 'mystery'
+        ? [
+            '7. 公开消息里不出现任何角色本内容；玩家私聊给你的秘密不要复述给其他玩家；只有复盘阶段才能完整讲出真相。',
+          ]
+        : []),
       ...(room.pack && PACK_MODE_RULES[room.pack.mode] && PACK_MODE_RULES[room.pack.mode] !== ''
         ? ['', '【模式】' + PACK_MODE_RULES[room.pack.mode]]
         : []),
     ].join('\n')
     const instructions = []
     if (reveal) {
-      instructions.push('现在揭晓汤底：完整、清楚地讲出真相，让所有玩家明白谜面与谜底如何对应。')
+      instructions.push(
+        '现在揭晓汤底：完整、清楚地讲出真相，让所有玩家明白谜面与谜底如何对应。' +
+          (room.truth ? `\n汤底原文（照这个讲，不要编造）：\n${room.truth}` : ''),
+      )
     }
-    if (force && !reveal) {
+    if (phaseDirective && phase) {
+      instructions.push(
+        `现在进入「${phase.label}」阶段：${phaseRule} 先用一句话交代阶段目标，再让玩家行动。`,
+      )
+    } else if (force && !reveal) {
       instructions.push('现在立即推进剧情：给出新的场景、事件或对话，让故事往前走一步。')
     }
     return instructions.length > 0
-      ? `${base}\n\n【主持人指令】${instructions.join('')}`
+      ? `${base}\n\n【主持人指令】${instructions.join('\n')}`
       : base
   }
 
@@ -932,6 +1113,33 @@ export function createRoomServer(options = {}) {
     const value = typeof text === 'string' ? text.trim() : ''
     if (value === '') return ''
     return value.slice(0, 4000)
+  }
+
+  /** 主代理输出里的 <speak 角色名> 指令：从正文里剥掉，只留第一个角色名 */
+  function extractSpeakDirective(text) {
+    let name = ''
+    const cleaned = String(text ?? '')
+      .replace(/<\s*speak(?:\s+([^<>]*?))?\s*\/?>(?:\s*<\/\s*speak\s*>)?/gi, (_, arg) => {
+        if (!name && typeof arg === 'string') {
+          name = arg
+            .trim()
+            .replace(/^["'「『]|["'」』]$/g, '')
+            .slice(0, 40)
+        }
+        return ''
+      })
+      .trim()
+    return { text: cleaned, name }
+  }
+
+  function findAgentByName(room, name) {
+    const key = String(name ?? '').trim().toLowerCase()
+    if (!key) return null
+    return (
+      (room.agents || []).find(
+        (agent) => String(agent.id).toLowerCase() === key || String(agent.name).toLowerCase() === key,
+      ) || null
+    )
   }
 
   function hasPendingOnline(room) {
@@ -1017,6 +1225,9 @@ export function createRoomServer(options = {}) {
     room._force = false
     const reveal = room._reveal === true
     room._reveal = false
+    // 刚切换阶段时给模型一句额外指令（只生效这一轮）
+    const phaseDirective = room._phaseDirective || ''
+    room._phaseDirective = ''
 
     const batch = room.messages.filter((m) => m.seq > room.ai.cursor && m.inAiContext)
     if (batch.length === 0 && !force) return
@@ -1028,7 +1239,7 @@ export function createRoomServer(options = {}) {
     let replyReasoning = ''
     try {
       const reply = await cfg.generate({
-        system: buildSystemPrompt(room, force, reveal),
+        system: buildSystemPrompt(room, force, reveal, phaseDirective),
         messages: buildAiContext(room),
         force,
         roomId: room.id,
@@ -1053,7 +1264,8 @@ export function createRoomServer(options = {}) {
       return
     }
 
-    const text = normalizeAiText(replyText)
+    const parsedReply = extractSpeakDirective(replyText)
+    const text = normalizeAiText(parsedReply.text)
     if (room.closed) {
       // 生成期间房间被关掉：不往已关闭的房间追加消息
       room.ai.status = 'idle'
@@ -1063,10 +1275,23 @@ export function createRoomServer(options = {}) {
     if (!silent) {
       appendMessage(room, { kind: 'ai', name: room.aiName ?? cfg.aiName, role: 'ai', text, inAiContext: true })
     }
+    // 主代理用 <speak 角色名> 点名：自动让子代理接一句（每轮最多一次）
+    let autoSpeakFailed = false
+    if (parsedReply.name) {
+      const agent = findAgentByName(room, parsedReply.name)
+      if (agent) {
+        try {
+          await runSpeakTurn(room, agent)
+        } catch (error) {
+          autoSpeakFailed = true
+          room.ai.lastError = error instanceof Error ? error.message : String(error)
+        }
+      }
+    }
     // 这一批消息不论 AI 是否接话都算「看过」，否则 <silent> 之后会反复重发
     room.ai.cursor = room.seq
     room.ai.status = 'idle'
-    room.ai.lastError = null
+    if (!autoSpeakFailed) room.ai.lastError = null
     // 思维链只在房主本机留痕：不进 publicRoom、不进 messages、不进 SSE
     if (cfg.saveReasoning === true && replyReasoning) {
       room.debug = Array.isArray(room.debug) ? room.debug : []
@@ -1159,7 +1384,7 @@ export function createRoomServer(options = {}) {
         ok: true,
         rooms: rooms.size,
         author: 'B站：喵诺澪染',
-        plugin: 'dsh-galgame-room',
+        plugin: 'dsh-story-party',
       })
     }
     if (parts[1] === 'version' && parts.length === 2 && req.method === 'GET') {
@@ -1229,7 +1454,13 @@ export function createRoomServer(options = {}) {
           cards = []
         }
       }
-      return sendJson(res, 200, { cards: cards.map((card) => personaFromCard(card)).filter(Boolean) })
+      return sendJson(res, 200, {
+        cards: cards
+          .map((card) => personaFromCard(card))
+          .filter(Boolean)
+          // 开房页只需要选卡信息；角色本不经这里下发
+          .map(({ secret, playerBrief, ...safe }) => safe),
+      })
     }
     if (parts[1] === 'packs') {
       if (parts.length === 2) {
@@ -1242,7 +1473,18 @@ export function createRoomServer(options = {}) {
         if (req.method === 'GET') {
           const pack = await loadPack(packId)
           if (!pack) return sendError(res, 404, '剧情包不存在')
-          return sendJson(res, 200, { pack })
+          // 汤底 / 真相只给 GM：普通详情只返回 hasTruth，不返回正文
+          const { truth, ...safe } = pack
+          return sendJson(res, 200, {
+            pack: {
+              ...safe,
+              hasTruth: Boolean(truth),
+              // 角色本只经房间的角色接口按身份下发，详情里统一剥掉
+              characters: (Array.isArray(pack.characters) ? pack.characters : []).map(
+                ({ secret, playerBrief, ...rest }) => rest,
+              ),
+            },
+          })
         }
         if (req.method === 'DELETE') {
           const pack = await loadPack(packId)
@@ -1310,6 +1552,13 @@ export function createRoomServer(options = {}) {
     if (sub === 'avatar' && req.method === 'POST') return setAvatar(req, res, room, url)
     if (sub === 'vote' && req.method === 'POST') return roomVote(req, res, room, url)
     if (sub === 'speak' && req.method === 'POST') return speakAgent(req, res, room, url)
+    if (sub === 'truth' && req.method === 'GET') return roomTruth(req, res, room, url)
+    if (sub === 'roles') {
+      if (req.method === 'GET') return getRoles(req, res, room, url)
+      if (req.method === 'POST') return setRoles(req, res, room, url)
+      return sendError(res, 405, 'method not allowed')
+    }
+    if (sub === 'phase' && req.method === 'POST') return roomPhase(req, res, room, url)
     if (sub === 'leave' && req.method === 'POST') return leaveRoom(req, res, room, url)
 
     // /api/rooms/:id 本身
@@ -1349,6 +1598,8 @@ export function createRoomServer(options = {}) {
     let packInfo = null
     let packCharacters = []
     let packScenario = ''
+    let packTruth = ''
+    let packMode = 'roleplay'
     let defaultTitle = ''
     if (body.packId) {
       const pack = await loadPack(String(body.packId))
@@ -1360,20 +1611,45 @@ export function createRoomServer(options = {}) {
       persona = personaFromCard(character)
       if (!persona) return sendError(res, 400, '剧情包里的人物卡不完整')
       packScenario = pack.scenario || ''
+      packTruth = typeof pack.truth === 'string' ? pack.truth : ''
+      packMode = PACK_MODES.has(pack.mode) ? pack.mode : 'roleplay'
       defaultTitle = `${pack.name} · ${character.name}`
       packInfo = {
         id: pack.id,
         name: pack.name,
         version: pack.version,
-        mode: pack.mode || 'roleplay',
+        mode: packMode,
         intro: pack.intro || '',
         recommendedPlayers: pack.recommendedPlayers || { min: 2, max: 4 },
+        hasTruth: Boolean(packTruth),
         map: pack.map || { locations: [], routes: [] },
+      }
+      // 剧本杀里如果选中的人类角色只是「玩家位」，AI 就当 GM/旁白，
+      // 不要把该角色变成 AI 的化身；AI 角色仍可被选中当主角。
+      if (packMode === 'mystery' && persona.playedBy === 'human') {
+        persona = null
+        defaultTitle = pack.name
       }
     } else if (body.cardId) {
       persona = personaFromCard(cards.find((card) => card && card.id === body.cardId))
       if (!persona) return sendError(res, 400, '找不到这张人设卡（cosplay 角色库可能已更新）')
     }
+
+    // 剧本杀角色名单：所有人物都在，角色本只存在房间 JSON 里
+    const cast = packCharacters
+      .map((character) => personaFromCard(character))
+      .filter(Boolean)
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        emoji: item.emoji,
+        avatar: item.avatar || '',
+        gender: item.gender || '',
+        playedBy: item.playedBy || 'ai',
+        playerBrief: item.playerBrief || '',
+        secret: item.secret || '',
+        assigneeId: null,
+      }))
 
     const id = newRoomId()
     const gm = {
@@ -1401,6 +1677,12 @@ export function createRoomServer(options = {}) {
       id,
       solo,
       contextMessages,
+      mode: packMode,
+      // 剧本杀阶段机：其余模式为 null
+      phase: packMode === 'mystery' ? 'reading' : null,
+      // 汤底 / 真相：只留在房主主机与系统提示词里，不进 publicRoom
+      truth: packTruth.slice(0, 20000),
+      cast,
       // 长局滚动摘要：默认开，房主可关
       autoSummary: body.autoSummary !== false,
       summary: '',
@@ -1537,7 +1819,9 @@ export function createRoomServer(options = {}) {
     if (member) member.lastSeenAt = nowMs()
     const since = Math.max(0, Math.floor(Number(url.searchParams.get('since') ?? 0)) || 0)
     const limit = clampInt(url.searchParams.get('limit'), 200, 1, 1000)
-    const messages = room.messages.filter((m) => m.seq > since).slice(0, limit)
+    const messages = room.messages
+      .filter((m) => m.seq > since && messageVisibleTo(m, member?.id, member?.role))
+      .slice(0, limit)
     return sendJson(res, 200, {
       roomId: room.id,
       seq: room.seq,
@@ -1562,9 +1846,22 @@ export function createRoomServer(options = {}) {
     if (text === '') return sendError(res, 400, 'text 不能为空')
     if (text.length > MAX_TEXT_LENGTH) return sendError(res, 413, `单条不能超过 ${MAX_TEXT_LENGTH} 字`)
 
+    // 私聊：玩家只能私聊 GM，GM 可以私聊任意成员；私聊不进 AI 上下文
+    const to = String(body.to ?? '').trim()
+    let target = null
+    if (to !== '') {
+      target = room.members[to]
+      if (!target) return sendError(res, 404, '私聊对象不在房间里')
+      if (target.id === member.id) return sendError(res, 400, '不能私聊自己')
+      if (member.role !== 'gm' && target.role !== 'gm') {
+        return sendError(res, 403, '玩家只能私聊 GM')
+      }
+    }
+    const isPrivate = Boolean(target)
+
     member.lastSeenAt = nowMs()
     // 观众的发言进消息流、但不进 AI 上下文，也永远不触发模型
-    const inAiContext = member.role !== 'spectator'
+    const inAiContext = !isPrivate && member.role !== 'spectator'
     const message = appendMessage(room, {
       kind: 'user',
       memberId: member.id,
@@ -1572,6 +1869,8 @@ export function createRoomServer(options = {}) {
       role: member.role,
       text,
       inAiContext,
+      private: isPrivate,
+      to: target ? target.id : null,
     })
     await persist(room)
     if (inAiContext) scheduleAi(room)
@@ -1648,6 +1947,39 @@ export function createRoomServer(options = {}) {
   }
 
   /** 投票：GM 发起 / 成员投票 / GM 取消；全员同意才生效（揭晓汤底） */
+  /** 子代理说一轮：先出意图，再由主代理写成最终消息（手动点名与自动 <speak> 共用） */
+  async function runSpeakTurn(room, agent) {
+    const outcome = await runSubAgent(room, agent)
+    if (outcome.location) agent.location = outcome.location
+    if (outcome.plan) agent.plan = outcome.plan
+    const directive = [
+      `【接下来由子代理「${agent.name}」接话】`,
+      `她现在在：${agent.location || '未说明'}；她接下来的打算：${agent.plan || '未说明'}。`,
+      `她的意图（不要照抄）：${outcome.brief}`,
+      `请以旁白/「${agent.name}」的口吻写成一条最终消息，200 字以内，只输出正文。`,
+    ].join('\n')
+    const reply = await cfg.generate({
+      system: buildSystemPrompt(room, false) + '\n\n' + directive,
+      messages: buildAiContext(room),
+      force: true,
+      roomId: `${room.id}#${agent.id}`,
+      captureReasoning: cfg.saveReasoning === true,
+    })
+    const text = normalizeAiText(typeof reply === 'string' ? reply : reply?.text || '')
+    if (text) {
+      appendMessage(room, {
+        kind: 'ai',
+        name: agent.name,
+        role: 'ai',
+        text,
+        inAiContext: true,
+      })
+    }
+    agent.inScene = true
+    agent.lastSeenSeq = room.seq
+    return text
+  }
+
   /** GM 点名一个子代理接话：子代理只出意图，主代理定稿成一条消息 */
   async function speakAgent(req, res, room, url) {
     const member = findMember(room, tokenOf(req, url))
@@ -1666,34 +1998,7 @@ export function createRoomServer(options = {}) {
     room.ai.status = 'thinking'
     broadcast(room.id, 'ai', { status: 'thinking', seq: room.seq })
     try {
-      const outcome = await runSubAgent(room, agent)
-      if (outcome.location) agent.location = outcome.location
-      if (outcome.plan) agent.plan = outcome.plan
-      const directive = [
-        `【接下来由子代理「${agent.name}」接话】`,
-        `她现在在：${agent.location || '未说明'}；她接下来的打算：${agent.plan || '未说明'}。`,
-        `她的意图（不要照抄）：${outcome.brief}`,
-        `请以旁白/「${agent.name}」的口吻写成一条最终消息，200 字以内，只输出正文。`,
-      ].join('\n')
-      const reply = await cfg.generate({
-        system: buildSystemPrompt(room, false) + '\n\n' + directive,
-        messages: buildAiContext(room),
-        force: true,
-        roomId: `${room.id}#${agent.id}`,
-        captureReasoning: cfg.saveReasoning === true,
-      })
-      const text = normalizeAiText(typeof reply === 'string' ? reply : reply?.text || '')
-      if (text) {
-        appendMessage(room, {
-          kind: 'ai',
-          name: agent.name,
-          role: 'ai',
-          text,
-          inAiContext: true,
-        })
-      }
-      agent.inScene = true
-      agent.lastSeenSeq = room.seq
+      const text = await runSpeakTurn(room, agent)
       room.ai.cursor = room.seq
       room.ai.status = 'idle'
       room.ai.lastError = null
@@ -1722,6 +2027,7 @@ export function createRoomServer(options = {}) {
       persona.description ? `设定：${persona.description}` : '',
       persona.personality ? `性格：${persona.personality}` : '',
       persona.rules ? `守则：${persona.rules}` : '',
+      persona.secret ? `你的秘密（不要公开说出，除非剧情已经揭晓）：${persona.secret}` : '',
       persona.playerBrief ? `须知：${persona.playerBrief}` : '',
       persona.likes ? `喜爱：${persona.likes}` : '',
       room.pack?.map?.locations?.length
@@ -1780,6 +2086,165 @@ export function createRoomServer(options = {}) {
       }
     }
     return { brief: text || '（沉默）', location: '', plan: '' }
+  }
+
+  /** 汤底 / 真相：只有 GM 能取；永不出现在 publicRoom */
+  async function roomTruth(req, res, room, url) {
+    const member = findMember(room, tokenOf(req, url))
+    if (!member || member.role !== 'gm') return sendError(res, 403, '只有 GM 能看汤底')
+    if (!room.truth) return sendError(res, 404, '这个房间没有汤底 / 真相')
+    return sendJson(res, 200, { truth: room.truth })
+  }
+
+  /** 角色本：GM 看全部，玩家只看自己的；别人的 secret 直接不返回 */
+  function rolesPayload(room, member) {
+    const isGm = member.role === 'gm'
+    return {
+      mode: room.mode || 'roleplay',
+      phase: publicPhase(room),
+      myCharacterId: member.characterId ?? null,
+      cast: (room.cast || []).map((character) => {
+        const assignee = character.assigneeId ? room.members[character.assigneeId] : null
+        const mine = character.assigneeId === member.id
+        const canSee = isGm || mine
+        return {
+          id: character.id,
+          name: character.name,
+          emoji: character.emoji || '',
+          avatar: character.avatar || null,
+          gender: character.gender || '',
+          playedBy: character.playedBy || 'ai',
+          assignee: assignee ? { id: assignee.id, name: assignee.name } : null,
+          mine,
+          hasSecret: Boolean(character.secret),
+          playerBrief: canSee ? character.playerBrief || '' : '',
+          secret: canSee ? character.secret || '' : '',
+        }
+      }),
+    }
+  }
+
+  async function getRoles(req, res, room, url) {
+    const member = findMember(room, tokenOf(req, url))
+    if (!member) return sendError(res, 403, '需要成员令牌才能看角色本')
+    member.lastSeenAt = nowMs()
+    return sendJson(res, 200, rolesPayload(room, member))
+  }
+
+  /** 领角色 / GM 指派 / 释放；一个成员同时只持有一个角色 */
+  async function setRoles(req, res, room, url) {
+    const member = findMember(room, tokenOf(req, url))
+    if (!member) return sendError(res, 403, '需要成员令牌')
+    let body
+    try {
+      body = await readJsonBody(req)
+    } catch (error) {
+      return sendError(res, 400, error instanceof Error ? error.message : 'bad body')
+    }
+    const action = String(body.action ?? '')
+    const cast = Array.isArray(room.cast) ? room.cast : []
+    const target = cast.find((character) => character.id === String(body.characterId ?? ''))
+    if (action !== 'release' && !target) return sendError(res, 404, '房间里没有这个角色')
+
+    if (action === 'claim') {
+      if (member.role === 'gm') return sendError(res, 403, 'GM 不扮演玩家角色')
+      if (member.role === 'spectator') return sendError(res, 403, '观众不能领取角色，请让 GM 把你改成玩家')
+      if (!target) return sendError(res, 404, '房间里没有这个角色')
+      if (target.playedBy === 'ai') return sendError(res, 409, '这个角色由 AI 扮演，不能领取')
+      if (target.assigneeId && target.assigneeId !== member.id) {
+        return sendError(res, 409, '这个角色已经有人领取了')
+      }
+      for (const character of cast) {
+        if (character.assigneeId === member.id && character.id !== target.id) character.assigneeId = null
+      }
+      target.assigneeId = member.id
+      member.characterId = target.id
+    } else if (action === 'assign') {
+      if (member.role !== 'gm') return sendError(res, 403, '只有 GM 能指派角色')
+      if (!target) return sendError(res, 404, '房间里没有这个角色')
+      const targetMember = body.memberId ? room.members[String(body.memberId)] : null
+      if (body.memberId && !targetMember) return sendError(res, 404, '成员不存在')
+      if (targetMember && targetMember.role === 'gm') return sendError(res, 409, 'GM 不扮演玩家角色')
+      if (targetMember && targetMember.role === 'spectator') {
+        return sendError(res, 409, '观众不能扮演角色，请先改成玩家')
+      }
+      if (targetMember && target.playedBy === 'ai') {
+        return sendError(res, 409, '这个角色由 AI 扮演，不能指派给玩家')
+      }
+      // 目标成员原来持有的角色先释放
+      if (targetMember && targetMember.characterId && targetMember.characterId !== target.id) {
+        const previous = cast.find((character) => character.id === targetMember.characterId)
+        if (previous) previous.assigneeId = null
+      }
+      // 角色原来的持有人先释放
+      if (target.assigneeId && target.assigneeId !== (targetMember ? targetMember.id : null)) {
+        const previousHolder = room.members[target.assigneeId]
+        if (previousHolder && previousHolder.characterId === target.id) previousHolder.characterId = null
+      }
+      target.assigneeId = targetMember ? targetMember.id : null
+      if (targetMember) targetMember.characterId = target.id
+    } else if (action === 'release') {
+      const targetMember =
+        member.role === 'gm' && body.memberId ? room.members[String(body.memberId)] : member
+      if (!targetMember) return sendError(res, 404, '成员不存在')
+      if (member.role !== 'gm' && targetMember.id !== member.id) {
+        return sendError(res, 403, '只能释放自己的角色')
+      }
+      for (const character of cast) {
+        if (character.assigneeId === targetMember.id) character.assigneeId = null
+      }
+      targetMember.characterId = null
+    } else {
+      return sendError(res, 400, '未知的角色操作')
+    }
+
+    member.lastSeenAt = nowMs()
+    await persist(room)
+    broadcast(room.id, 'roles', { cast: publicCast(room) })
+    broadcast(room.id, 'room', { room: publicRoom(room) })
+    return sendJson(res, 200, rolesPayload(room, member))
+  }
+
+  /** 剧本杀阶段机：GM 点「下一阶段」或直接跳到某个阶段 */
+  async function roomPhase(req, res, room, url) {
+    const member = findMember(room, tokenOf(req, url))
+    if (!member || member.role !== 'gm') return sendError(res, 403, '只有 GM 能切换阶段')
+    if ((room.mode || 'roleplay') !== 'mystery') return sendError(res, 409, '这个房间不是剧本杀')
+    let body
+    try {
+      body = await readJsonBody(req)
+    } catch (error) {
+      return sendError(res, 400, error instanceof Error ? error.message : 'bad body')
+    }
+    const action = String(body.action ?? 'next')
+    let next = null
+    if (action === 'next') {
+      const index = MYSTERY_PHASES.findIndex((phase) => phase.id === room.phase)
+      next = MYSTERY_PHASES[index >= 0 ? index + 1 : 0] || null
+      if (!next) return sendError(res, 409, '已经是最后一个阶段（复盘）')
+    } else if (action === 'set') {
+      next = MYSTERY_PHASES.find((phase) => phase.id === String(body.phase ?? '')) || null
+      if (!next) return sendError(res, 400, '未知的阶段')
+    } else {
+      return sendError(res, 400, '未知的阶段操作')
+    }
+    const changed = next.id !== room.phase
+    if (changed) {
+      room.phase = next.id
+      // 这一轮提示词里交代阶段目标
+      room._phaseDirective = next.id
+      appendMessage(room, {
+        kind: 'system',
+        text: `进入「${next.label}」阶段`,
+        inAiContext: false,
+      })
+      broadcast(room.id, 'phase', { phase: publicPhase(room) })
+      broadcast(room.id, 'room', { room: publicRoom(room) })
+    }
+    member.lastSeenAt = nowMs()
+    await persist(room)
+    if (changed && body.narrate !== false) scheduleAi(room, { force: true })
+    return sendJson(res, 200, { phase: publicPhase(room), changed })
   }
 
   async function roomVote(req, res, room, url) {
@@ -1866,10 +2331,14 @@ export function createRoomServer(options = {}) {
     const member = findMember(room, tokenOf(req, url))
     if (!member) return sendError(res, 403, '需要成员令牌')
     if (member.role === 'gm') return sendError(res, 409, 'GM 不能离开自己的房间，请关闭房间')
+    for (const character of room.cast || []) {
+      if (character.assigneeId === member.id) character.assigneeId = null
+    }
     delete room.members[member.id]
     await persist(room)
     broadcast(room.id, 'system', { text: `${member.name} 离开了房间` })
     broadcastMembers(room)
+    broadcast(room.id, 'roles', { cast: publicCast(room) })
     return sendJson(res, 200, { left: true })
   }
 
@@ -1887,8 +2356,16 @@ export function createRoomServer(options = {}) {
     }
     if (!ASSIGNABLE_ROLES.has(body.role)) return sendError(res, 400, 'role 只能是 player 或 spectator')
     target.role = body.role
+    // 降为观众时释放角色，避免角色本留在已不能行动的人手里
+    if (target.role === 'spectator') {
+      for (const character of room.cast || []) {
+        if (character.assigneeId === target.id) character.assigneeId = null
+      }
+      target.characterId = null
+    }
     await persist(room)
     broadcastMembers(room)
+    broadcast(room.id, 'roles', { cast: publicCast(room) })
     broadcast(room.id, 'system', { text: `${target.name} 现在的职位是「${roleLabel(target.role)}」` })
     return sendJson(res, 200, { member: publicMember(target) })
   }
@@ -1899,10 +2376,14 @@ export function createRoomServer(options = {}) {
     if (memberId === gm.id) return sendError(res, 409, '不能踢自己')
     const target = room.members[memberId]
     if (!target) return sendError(res, 404, '成员不存在')
+    for (const character of room.cast || []) {
+      if (character.assigneeId === target.id) character.assigneeId = null
+    }
     delete room.members[memberId]
     await persist(room)
     broadcast(room.id, 'system', { text: `${target.name} 被移出了房间` })
     broadcastMembers(room)
+    broadcast(room.id, 'roles', { cast: publicCast(room) })
     return sendJson(res, 200, { kicked: true })
   }
 
@@ -1923,7 +2404,9 @@ export function createRoomServer(options = {}) {
     writeSse(res, 'snapshot', {
       room: publicRoom(room),
       ai: { status: room.ai.status, lastError: room.ai.lastError ?? null },
-      messages: room.messages.filter((m) => m.seq > since),
+      messages: room.messages.filter(
+        (m) => m.seq > since && messageVisibleTo(m, member?.id, member?.role),
+      ),
     })
 
     let set = clients.get(room.id)
@@ -1931,7 +2414,8 @@ export function createRoomServer(options = {}) {
       set = new Set()
       clients.set(room.id, set)
     }
-    set.add(res)
+    const client = { res, memberId: member?.id ?? null }
+    set.add(client)
 
     const heartbeat = setInterval(() => {
       // SSE 连着就说明人还在：刷新在线时间，避免空闲 30s 后被参与者列表标成离线
@@ -1946,7 +2430,7 @@ export function createRoomServer(options = {}) {
 
     req.on('close', () => {
       clearInterval(heartbeat)
-      set.delete(res)
+      set.delete(client)
       if (set.size === 0) clients.delete(room.id)
     })
   }
@@ -1957,7 +2441,7 @@ export function createRoomServer(options = {}) {
     return createServer((req, res) => {
       // 署名水印：所有响应都带作者头（ASCII，避免 header 编码问题）
       res.setHeader('X-Plugin-Author', 'bilibili:miao-nuo-lian-ran')
-      res.setHeader('X-Plugin-Name', 'dsh-galgame-room')
+      res.setHeader('X-Plugin-Name', 'dsh-story-party')
       route(req, res).catch((error) => {
         if (!res.headersSent) sendError(res, 500, error instanceof Error ? error.message : String(error))
         else res.end()

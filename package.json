@@ -1,6 +1,6 @@
 {
   "name": "dsh-story-party",
-  "version": "0.1.48",
+  "version": "0.2.0",
   "author": "喵诺澪染（B站：喵诺澪染）",
   "description": "DSH 联机故事派对插件：多人共享剧情、剧情包、子代理与地图（Galgame / 海龟汤 / 剧本杀）",
   "type": "module",
