@@ -23,6 +23,11 @@
     playersMax: $('players-max'),
     singlePlayer: $('single-player'),
     scenario: $('scenario'),
+    scenarioSection: $('scenario-section'),
+    scenarioHeading: $('scenario-heading'),
+    truthSection: $('truth-section'),
+    truthHeading: $('truth-heading'),
+    truthHint: $('truth-hint'),
     charList: $('char-list'),
     addChar: $('add-char'),
     addLocation: $('add-location'),
@@ -32,6 +37,15 @@
     addRoute: $('add-route'),
     routeList: $('route-list'),
     relationGraph: $('relation-graph'),
+    soloEnabled: $('solo-enabled'),
+    soloFields: $('solo-fields'),
+    soloMode: $('solo-mode'),
+    soloProtagonist: $('solo-protagonist'),
+    soloPremise: $('solo-premise'),
+    soloChapters: $('solo-chapters'),
+    addSoloChapter: $('add-solo-chapter'),
+    soloEndings: $('solo-endings'),
+    addSoloEnding: $('add-solo-ending'),
     assets: $('assets'),
     assetList: $('asset-list'),
     download: $('download'),
@@ -68,11 +82,37 @@
     els.modeHint.textContent = MODE_HINTS[els.packMode.value] || ''
   }
 
+  /** 不同包类型只显示需要的字段：汤底只给海龟汤/剧本杀看，大纲按类型换标题 */
+  function updateModeSections() {
+    const mode = els.packMode.value
+    const soup = mode === 'soup'
+    const mystery = mode === 'mystery'
+    els.scenarioHeading.textContent = soup ? '汤面 / 谜面（玩家看到的部分）' : '世界观 / 大纲'
+    els.scenario.placeholder = soup
+      ? '午夜，门外有人敲门……玩家一开始只看到这些。'
+      : '故事发生在哪里、你们是什么关系、现在是什么状态……'
+    els.truthSection.hidden = !(soup || mystery)
+    if (soup) {
+      els.truthHeading.textContent = '汤底（仅 GM 与 AI 可见）'
+      els.truthHint.textContent = '海龟汤的谜底。AI 知道它，但不会在全员揭晓前说出来。'
+      els.packTruth.placeholder = '例如：女孩其实已经死了，敲门的是她自己的回声。'
+    } else if (mystery) {
+      els.truthHeading.textContent = '真相（仅 GM 与 AI 可见）'
+      els.truthHint.textContent = '剧本杀的完整真相：凶手、动机、手法、时间线。复盘阶段才让 AI 完整讲出。'
+      els.packTruth.placeholder = '凶手是 A，动机是……手法是……时间线是……'
+    } else {
+      els.truthHeading.textContent = '汤底 / 真相（仅 GM 与 AI 可见）'
+      els.truthHint.textContent = ''
+    }
+  }
+
   els.packMode.addEventListener('change', () => {
     updateModeHint()
+    updateModeSections()
     scheduleDraftSave()
   })
   updateModeHint()
+  updateModeSections()
 
   for (const input of [
     els.packName,
@@ -130,6 +170,199 @@
     }
   }
 
+  // ---------- 个人本设置 ----------
+
+  function createSoloChapter() {
+    return {
+      id: 'ch' + Math.random().toString(36).slice(2, 8),
+      title: '',
+      goal: '',
+      choicesText: '',
+    }
+  }
+
+  function createSoloEnding() {
+    return {
+      id: 'end' + Math.random().toString(36).slice(2, 8),
+      title: '',
+      condition: '',
+    }
+  }
+
+  function renderSoloProtagonist() {
+    const previous = els.soloProtagonist.value || state.solo.protagonist || ''
+    els.soloProtagonist.textContent = ''
+    const none = document.createElement('option')
+    none.value = ''
+    none.textContent = '第一人称「你」'
+    els.soloProtagonist.append(none)
+    for (const character of state.characters) {
+      if (!character.name.trim()) continue
+      const option = document.createElement('option')
+      option.value = character.id
+      option.textContent = character.name.trim()
+      els.soloProtagonist.append(option)
+    }
+    if (previous && state.characters.some((character) => character.id === previous)) {
+      els.soloProtagonist.value = previous
+    } else {
+      els.soloProtagonist.value = ''
+      state.solo.protagonist = ''
+    }
+  }
+
+  function renderSolo() {
+    els.soloFields.hidden = !els.soloEnabled.checked
+    els.soloMode.value = state.solo.mode || 'free'
+    els.soloPremise.value = state.solo.premise || ''
+    renderSoloProtagonist()
+
+    els.soloChapters.textContent = ''
+    state.solo.chapters.forEach((chapter, index) => {
+      const row = document.createElement('div')
+      row.className = 'solo-item'
+      const head = document.createElement('div')
+      head.className = 'solo-item-head'
+      const title = document.createElement('strong')
+      title.textContent = `章节 ${index + 1}`
+      const remove = document.createElement('button')
+      remove.type = 'button'
+      remove.className = 'mini danger-mini'
+      remove.textContent = '删除'
+      remove.addEventListener('click', () => {
+        state.solo.chapters.splice(index, 1)
+        renderSolo()
+        scheduleDraftSave()
+      })
+      head.append(title, remove)
+
+      const grid = document.createElement('div')
+      grid.className = 'grid-2'
+      const titleField = document.createElement('label')
+      titleField.className = 'field'
+      titleField.innerHTML = '<span>章节标题</span>'
+      const titleInput = document.createElement('input')
+      titleInput.maxLength = 60
+      titleInput.value = chapter.title || ''
+      titleInput.placeholder = '雨夜'
+      titleInput.addEventListener('input', () => {
+        chapter.title = titleInput.value
+        scheduleDraftSave()
+      })
+      titleField.append(titleInput)
+
+      const goalField = document.createElement('label')
+      goalField.className = 'field'
+      goalField.innerHTML = '<span>章节目标（软引导）</span>'
+      const goalInput = document.createElement('input')
+      goalInput.maxLength = 200
+      goalInput.value = chapter.goal || ''
+      goalInput.placeholder = '让小柚放下戒心'
+      goalInput.addEventListener('input', () => {
+        chapter.goal = goalInput.value
+        scheduleDraftSave()
+      })
+      goalField.append(goalInput)
+
+      const choicesField = document.createElement('label')
+      choicesField.className = 'field span-2'
+      choicesField.innerHTML = '<span>关键选项（每行一个，可留空）</span>'
+      const choicesInput = document.createElement('textarea')
+      choicesInput.rows = 3
+      choicesInput.value = chapter.choicesText || ''
+      choicesInput.placeholder = '追问她为什么搬来\n先转移话题'
+      choicesInput.addEventListener('input', () => {
+        chapter.choicesText = choicesInput.value
+        scheduleDraftSave()
+      })
+      choicesField.append(choicesInput)
+
+      grid.append(titleField, goalField, choicesField)
+      row.append(head, grid)
+      els.soloChapters.append(row)
+    })
+
+    els.soloEndings.textContent = ''
+    state.solo.endings.forEach((ending, index) => {
+      const row = document.createElement('div')
+      row.className = 'solo-item'
+      const head = document.createElement('div')
+      head.className = 'solo-item-head'
+      const title = document.createElement('strong')
+      title.textContent = `结局 ${index + 1}`
+      const remove = document.createElement('button')
+      remove.type = 'button'
+      remove.className = 'mini danger-mini'
+      remove.textContent = '删除'
+      remove.addEventListener('click', () => {
+        state.solo.endings.splice(index, 1)
+        renderSolo()
+        scheduleDraftSave()
+      })
+      head.append(title, remove)
+
+      const grid = document.createElement('div')
+      grid.className = 'grid-2'
+      const titleField = document.createElement('label')
+      titleField.className = 'field'
+      titleField.innerHTML = '<span>结局标题</span>'
+      const titleInput = document.createElement('input')
+      titleInput.maxLength = 60
+      titleInput.value = ending.title || ''
+      titleInput.placeholder = '雨停了'
+      titleInput.addEventListener('input', () => {
+        ending.title = titleInput.value
+        scheduleDraftSave()
+      })
+      titleField.append(titleInput)
+
+      const conditionField = document.createElement('label')
+      conditionField.className = 'field'
+      conditionField.innerHTML = '<span>触发条件（自然语言即可）</span>'
+      const conditionInput = document.createElement('input')
+      conditionInput.maxLength = 300
+      conditionInput.value = ending.condition || ''
+      conditionInput.placeholder = '好感度达到 5，且聊过她的过去'
+      conditionInput.addEventListener('input', () => {
+        ending.condition = conditionInput.value
+        scheduleDraftSave()
+      })
+      conditionField.append(conditionInput)
+
+      grid.append(titleField, conditionField)
+      row.append(head, grid)
+      els.soloEndings.append(row)
+    })
+  }
+
+  els.soloEnabled.addEventListener('change', () => {
+    state.solo.enabled = els.soloEnabled.checked
+    renderSolo()
+    scheduleDraftSave()
+  })
+  els.soloMode.addEventListener('change', () => {
+    state.solo.mode = els.soloMode.value
+    scheduleDraftSave()
+  })
+  els.soloProtagonist.addEventListener('change', () => {
+    state.solo.protagonist = els.soloProtagonist.value
+    scheduleDraftSave()
+  })
+  els.soloPremise.addEventListener('input', () => {
+    state.solo.premise = els.soloPremise.value
+    scheduleDraftSave()
+  })
+  els.addSoloChapter.addEventListener('click', () => {
+    state.solo.chapters.push(createSoloChapter())
+    renderSolo()
+    scheduleDraftSave()
+  })
+  els.addSoloEnding.addEventListener('click', () => {
+    state.solo.endings.push(createSoloEnding())
+    renderSolo()
+    scheduleDraftSave()
+  })
+
   /** 把本地图片裁成 128×128 JPEG data URL（和房间头像同尺寸，别把包撑大） */
   function resizeImage(file, size) {
     return new Promise((resolve, reject) => {
@@ -183,6 +416,14 @@
     routes: [],
     viewParent: null,
     selectedLocationId: null,
+    solo: {
+      enabled: false,
+      mode: 'free',
+      protagonist: '',
+      premise: '',
+      chapters: [],
+      endings: [],
+    },
   }
 
   // ---------- 草稿：自动存进 localStorage，下次打开自动恢复 ----------
@@ -211,6 +452,7 @@
       links: state.links,
       locations: state.locations,
       routes: state.routes,
+      solo: state.solo,
     }
   }
 
@@ -257,13 +499,33 @@
     state.links = Array.isArray(draft.links) ? draft.links : []
     state.locations = Array.isArray(draft.locations) ? draft.locations : []
     state.routes = Array.isArray(draft.routes) ? draft.routes : []
+    if (draft.solo && typeof draft.solo === 'object') {
+      state.solo = {
+        enabled: draft.solo.enabled === true,
+        mode: draft.solo.mode || 'free',
+        protagonist: draft.solo.protagonist || '',
+        premise: draft.solo.premise || '',
+        chapters: (Array.isArray(draft.solo.chapters) ? draft.solo.chapters : []).map((chapter) => ({
+          ...createSoloChapter(),
+          ...chapter,
+          choicesText: chapter.choicesText || '',
+        })),
+        endings: (Array.isArray(draft.solo.endings) ? draft.solo.endings : []).map((ending) => ({
+          ...createSoloEnding(),
+          ...ending,
+        })),
+      }
+      els.soloEnabled.checked = state.solo.enabled
+    }
     state.viewParent = null
     updateModeHint()
+    updateModeSections()
     renderCharacters()
     renderLocations()
     renderRoutes()
     renderMap()
     setTimeout(() => renderGraph(), 0)
+    renderSolo()
     els.draftStatus.textContent = `已恢复草稿（${new Date(draft.savedAt).toLocaleString()}）`
     return true
   }
@@ -436,7 +698,10 @@
         control.value = character[key] || ''
         control.addEventListener('input', () => {
           character[key] = control.value
-          if (key === 'name') scheduleGraphRender()
+          if (key === 'name') {
+            scheduleGraphRender()
+            renderSoloProtagonist()
+          }
           scheduleDraftSave()
         })
         field.append(caption, control)
@@ -446,6 +711,7 @@
       block.append(grid)
       els.charList.append(block)
     })
+    renderSoloProtagonist()
   }
 
   els.addChar.addEventListener('click', () => {
@@ -1243,6 +1509,34 @@
       assetPaths.push(path)
     }
 
+    // 个人本：作者启用才写 solo 段；章节/结局全部可选
+    const soloMeta = els.soloEnabled.checked
+      ? {
+          mode: els.soloMode.value || 'free',
+          protagonist: els.soloProtagonist.value || '',
+          premise: els.soloPremise.value.trim(),
+          chapters: state.solo.chapters
+            .map((chapter, index) => ({
+              id: chapter.id || `ch${index + 1}`,
+              title: (chapter.title || '').trim(),
+              goal: (chapter.goal || '').trim(),
+              choices: String(chapter.choicesText || '')
+                .split('\n')
+                .map((choice) => choice.trim())
+                .filter(Boolean)
+                .slice(0, 8),
+            }))
+            .filter((chapter) => chapter.title || chapter.goal || chapter.choices.length > 0),
+          endings: state.solo.endings
+            .map((ending, index) => ({
+              id: ending.id || `end${index + 1}`,
+              title: (ending.title || '').trim(),
+              condition: (ending.condition || '').trim(),
+            }))
+            .filter((ending) => ending.title || ending.condition),
+        }
+      : null
+
     const meta = {
       format: 'dsh-galgame-pack',
       formatVersion: 1,
@@ -1251,6 +1545,9 @@
       mode: els.packMode.value || 'roleplay',
       intro: els.packIntro.value.trim(),
       truth: els.packTruth.value.trim(),
+      ...(soloMeta && (soloMeta.premise || soloMeta.chapters.length > 0 || soloMeta.endings.length > 0)
+        ? { solo: soloMeta }
+        : {}),
       recommendedPlayers: els.singlePlayer.checked
         ? { min: 1, max: 1 }
         : {
@@ -1443,4 +1740,5 @@
     // 图容器要先有尺寸：等一帧再画，避免 0 宽
     setTimeout(() => renderGraph(), 0)
   }
+  renderSolo()
 })()

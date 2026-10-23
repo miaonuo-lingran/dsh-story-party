@@ -1196,6 +1196,17 @@ button:disabled {
     transition: transform 0.24s ease;
   }
 
+  /* 单人本没有参与者列表，但 GM 控制条要一直可用 */
+  .members.solo {
+    position: static;
+    height: auto;
+    transform: none;
+    margin-top: 8px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: rgba(20, 24, 33, 0.7);
+  }
+
   body.members-open .members {
     transform: none;
   }
@@ -1565,6 +1576,370 @@ html.embed .card {
   color: #cfe3f7;
 }
 
+.story-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(242, 184, 128, 0.3);
+  border-radius: 10px;
+  background: rgba(242, 184, 128, 0.06);
+}
+
+.story-meta {
+  flex: 1;
+  min-width: 140px;
+  font-size: 12.5px;
+  color: #ffd9a3;
+}
+
+.story-choices {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.story-choice {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 舞台 ---------- */
+
+.stage {
+  position: relative;
+  flex-shrink: 0;
+  height: 280px;
+  margin: 0 0 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #0b0e14;
+}
+
+.stage-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  transition: background-image 0.3s ease;
+}
+
+.stage-sprites {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.stage-sprite {
+  position: absolute;
+  bottom: 58px;
+  width: 150px;
+  text-align: center;
+  transform: translateX(-50%);
+}
+
+.stage-sprite.pos-left {
+  left: 18%;
+}
+
+.stage-sprite.pos-center {
+  left: 50%;
+}
+
+.stage-sprite.pos-right {
+  left: 82%;
+}
+
+.stage-sprite img {
+  display: block;
+  max-width: 100%;
+  max-height: 190px;
+  margin: 0 auto;
+  border-radius: 12px;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.45));
+}
+
+.stage-sprite-emoji {
+  display: block;
+  font-size: 72px;
+  line-height: 1.2;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.45));
+}
+
+.stage-sprite-label {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(8, 10, 15, 0.68);
+  font-size: 11px;
+  color: #f2efe8;
+}
+
+.stage-caption {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 12px;
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 2px solid rgba(143, 211, 255, 0.55);
+  border-radius: 0 8px 8px 0;
+  background: rgba(8, 10, 15, 0.72);
+  font-size: 13px;
+  line-height: 1.6;
+  color: #f2efe8;
+  white-space: pre-wrap;
+}
+
+.stage-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+}
+
+.stage-actions .mini {
+  background: rgba(8, 10, 15, 0.66);
+}
+
+.choice-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(180, 160, 255, 0.35);
+  border-radius: 10px;
+  background: rgba(180, 160, 255, 0.07);
+}
+
+.choice-title {
+  font-size: 12.5px;
+  color: #c9b8ff;
+}
+
+.choice-options {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.choice-option.active {
+  border-color: rgba(180, 160, 255, 0.6);
+  background: rgba(180, 160, 255, 0.16);
+  color: #fff;
+}
+
+.scene-sprite-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 14px;
+}
+
+.scene-sprite-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) 70px minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.scene-sprite-row input {
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.24);
+  color: var(--text);
+  font-size: 12px;
+}
+
+/* ---------- 个人本存档 / 记忆 ---------- */
+
+.saves-list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 42vh;
+  overflow-y: auto;
+}
+
+.save-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.save-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.save-info strong {
+  font-size: 13px;
+}
+
+.save-info .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.save-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.saves-new {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.saves-new input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.24);
+  color: var(--text);
+  outline: none;
+}
+
+#memory-modal .field {
+  margin-bottom: 10px;
+}
+
+#memory-modal textarea {
+  width: 100%;
+}
+
+/* ---------- 个人资料 ---------- */
+
+.profile-card {
+  width: min(560px, 100%);
+}
+
+.profile-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.profile-entry .ghost {
+  flex-shrink: 0;
+}
+
+.draw-entry {
+  margin: 0 0 12px;
+  text-align: center;
+}
+
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 18px 0;
+}
+
+.profile-avatar {
+  width: 104px;
+  height: 104px;
+  flex: 0 0 104px;
+  font-size: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.profile-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+}
+
+.profile-actions .muted {
+  line-height: 1.5;
+}
+
+.profile-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 18px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.profile-preview strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.profile-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-buttons .block {
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .stage {
+    height: 210px;
+  }
+
+  .stage-sprite {
+    width: 110px;
+    bottom: 50px;
+  }
+
+  .stage-sprite img {
+    max-height: 140px;
+  }
+
+  .stage-sprite-emoji {
+    font-size: 52px;
+  }
+
+  .scene-sprite-row {
+    grid-template-columns: 1fr 60px;
+  }
+}
+
 .composer-to {
   max-width: 150px;
   padding: 0 10px;
@@ -1677,4 +2052,196 @@ html.embed .card {
   .composer-to {
     max-width: 96px;
   }
+}
+
+/* ---------- 制作页：个人本章节 / 结局 ---------- */
+
+.solo-head {
+  margin-top: 16px;
+}
+
+.solo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.solo-item {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.solo-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.solo-item-head strong {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ---------- AI 画我猜 ---------- */
+
+.draw-card {
+  width: min(900px, 100%);
+}
+
+.draw-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.draw-header h1 {
+  margin: 4px 0 6px;
+}
+
+.draw-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.draw-stats strong {
+  font-size: 18px;
+  color: #ffd9a3;
+}
+
+.draw-board-wrap {
+  position: relative;
+  width: min(560px, 100%);
+  margin: 16px auto;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #faf6ec;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+}
+
+.draw-board-wrap svg {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+.draw-answer {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(20, 24, 33, 0.88);
+  color: #fff;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.draw-hint {
+  min-height: 20px;
+  margin: 0 0 10px;
+  text-align: center;
+  font-size: 13px;
+  color: #ffd9a3;
+}
+
+.draw-form {
+  display: flex;
+  gap: 8px;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.draw-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(0, 0, 0, 0.24);
+  color: var(--text);
+  outline: none;
+}
+
+.draw-form input:focus {
+  border-color: rgba(242, 184, 128, 0.5);
+  box-shadow: 0 0 0 3px rgba(242, 184, 128, 0.1);
+}
+
+.draw-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+.draw-message {
+  min-height: 20px;
+  margin: 4px 0 10px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.draw-finished {
+  max-width: 560px;
+  margin: 14px auto;
+  padding: 16px;
+  border: 1px solid rgba(242, 184, 128, 0.35);
+  border-radius: 12px;
+  background: rgba(242, 184, 128, 0.07);
+  text-align: center;
+}
+
+.draw-finished h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.draw-finished p {
+  margin: 0 0 12px;
+  color: #ffd9a3;
+}
+
+.draw-history {
+  list-style: none;
+  max-width: 560px;
+  margin: 12px auto 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.draw-history li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 12.5px;
+}
+
+.draw-history li span:first-child {
+  color: var(--muted);
+}
+
+.draw-history li strong {
+  font-size: 13px;
+}
+
+.draw-history li .muted {
+  margin-left: auto;
 }

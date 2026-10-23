@@ -64,6 +64,9 @@
           </button>
           <input type="file" id="avatar-file" accept="image/*" hidden>
           <button id="roles-btn" class="ghost" type="button" hidden>角色本</button>
+          <button id="stage-btn" class="ghost" type="button" hidden>舞台</button>
+          <button id="saves-btn" class="ghost" type="button" hidden>存档</button>
+          <button id="memory-btn" class="ghost" type="button" hidden>记忆</button>
           <button id="copy-invite" class="ghost" type="button">复制邀请链接</button>
           <button id="toggle-members" class="ghost only-mobile" type="button">参与者</button>
         </div>
@@ -71,6 +74,21 @@
 
       <main class="room-main">
         <section class="chat">
+          <div id="stage" class="stage" hidden>
+            <div id="stage-bg" class="stage-bg"></div>
+            <div id="stage-sprites" class="stage-sprites"></div>
+            <div id="stage-caption" class="stage-caption"></div>
+            <div class="stage-actions">
+              <button id="stage-bgm-toggle" class="mini" type="button" hidden>BGM</button>
+              <button id="stage-collapse" class="mini" type="button">收起舞台</button>
+            </div>
+            <audio id="stage-audio" loop preload="none"></audio>
+          </div>
+          <div id="choice-bar" class="choice-bar" hidden>
+            <span id="choice-title" class="choice-title"></span>
+            <div id="choice-options-list" class="choice-options"></div>
+            <button id="choice-cancel" class="mini danger-mini" type="button" hidden>取消投票</button>
+          </div>
           <div id="phase-bar" class="phase-bar" hidden>
             <span id="phase-text" class="phase-text"></span>
             <button id="phase-next" class="mini primary" type="button">下一阶段</button>
@@ -86,6 +104,11 @@
             <button id="vote-disagree" class="mini" type="button">反对</button>
             <button id="vote-cancel" class="mini danger-mini" type="button">取消投票</button>
           </div>
+          <div id="story-bar" class="story-bar" hidden>
+            <div id="story-meta" class="story-meta"></div>
+            <div id="story-choices" class="story-choices"></div>
+            <button id="story-continue" class="mini" type="button" hidden>让故事继续</button>
+          </div>
           <form id="composer" class="composer">
             <select id="composer-to" class="composer-to" aria-label="私聊对象" hidden></select>
             <input id="composer-input" maxlength="500" autocomplete="off" placeholder="说点什么…（Enter 发送）" aria-label="发言">
@@ -95,7 +118,7 @@
         </section>
 
         <aside id="members-panel" class="members">
-          <div class="members-head">
+          <div id="members-head" class="members-head">
             <h2>参与者</h2>
             <span id="member-count" class="muted"></span>
           </div>
@@ -108,6 +131,8 @@
               <select id="agent-select"></select>
             </div>
             <button id="speak-agent" class="ghost block" type="button" hidden>让她接话</button>
+            <button id="scene-edit" class="ghost block" type="button" hidden>设置舞台</button>
+            <button id="choice-start" class="ghost block" type="button" hidden>发起选项投票</button>
             <button id="truth-btn" class="ghost block" type="button" hidden>查看汤底 / 真相</button>
             <button id="start-vote" class="ghost block" type="button" hidden>发起揭晓投票</button>
             <button id="close-room" class="danger block" type="button">关闭房间</button>
@@ -155,6 +180,93 @@
       <p class="muted small">只有你能看到；AI 知道它，但不会在揭晓前说出来。</p>
       <pre id="truth-text" class="truth-text"></pre>
       <button id="truth-close" class="ghost block" type="button">关闭</button>
+    </div>
+  </div>
+
+  <!-- 舞台设置（仅 GM） -->
+  <div id="scene-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="scene-title">
+      <h2 id="scene-title">设置舞台</h2>
+      <p class="muted small">背景 / BGM 只认剧情包 assets 里的素材；立绘从房间角色里选。</p>
+      <label class="field">
+        <span>背景</span>
+        <select id="scene-background"></select>
+      </label>
+      <label class="field">
+        <span>BGM</span>
+        <select id="scene-bgm"></select>
+      </label>
+      <label class="field">
+        <span>字幕（可选）</span>
+        <input id="scene-caption" maxlength="200" placeholder="雨声停了一拍。">
+      </label>
+      <div class="card-head">
+        <h3>立绘</h3>
+        <button id="scene-add-sprite" class="ghost" type="button">+ 添加立绘</button>
+      </div>
+      <div id="scene-sprite-list" class="scene-sprite-list"></div>
+      <div class="modal-actions">
+        <button id="scene-save" class="primary" type="button">保存舞台</button>
+        <button id="scene-close" class="ghost" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 发起选项投票（仅 GM） -->
+  <div id="choice-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="choice-title-input">
+      <h2 id="choice-title-input">发起选项投票</h2>
+      <p class="muted small">每行一个选项，2–6 个；所有人投完后按票数继续，平票取第一个。</p>
+      <textarea id="choice-options-input" rows="5" placeholder="去开门&#10;先躲起来"></textarea>
+      <div class="modal-actions">
+        <button id="choice-start-submit" class="primary" type="button">发起投票</button>
+        <button id="choice-close" class="ghost" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 个人本存档 / 读档 -->
+  <div id="saves-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="saves-title">
+      <h2 id="saves-title">存档 / 读档</h2>
+      <p class="muted small">自动存档每回合更新；手动存档最多 5 个。读档会整份恢复消息、选项和记忆。</p>
+      <ul id="saves-list" class="saves-list"></ul>
+      <div class="saves-new">
+        <input id="save-name" maxlength="40" placeholder="存档名（可选）">
+        <button id="save-new" class="primary" type="button">新建存档</button>
+      </div>
+      <div class="modal-actions">
+        <button id="rewind-btn" class="ghost" type="button">回退一步</button>
+        <button id="saves-close" class="ghost" type="button">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 个人本长期记忆 -->
+  <div id="memory-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="memory-title">
+      <h2 id="memory-title">长期记忆</h2>
+      <p class="muted small">AI 会提议更新，也可以在这里手动改。每行一条；关系/好感写成「名字：内容」。</p>
+      <label class="field">
+        <span>已知事实</span>
+        <textarea id="memory-facts" rows="3" placeholder="每行一条"></textarea>
+      </label>
+      <label class="field">
+        <span>人物关系</span>
+        <textarea id="memory-relations" rows="3" placeholder="小柚：开始信任你"></textarea>
+      </label>
+      <label class="field">
+        <span>好感（-100 到 100）</span>
+        <textarea id="memory-affection" rows="3" placeholder="小柚：3"></textarea>
+      </label>
+      <label class="field">
+        <span>物品</span>
+        <textarea id="memory-items" rows="3" placeholder="雨伞&#10;旧钥匙"></textarea>
+      </label>
+      <div class="modal-actions">
+        <button id="memory-save" class="primary" type="button">保存记忆</button>
+        <button id="memory-close" class="ghost" type="button">关闭</button>
+      </div>
     </div>
   </div>
 

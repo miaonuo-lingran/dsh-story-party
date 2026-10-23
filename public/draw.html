@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="author" content="B站：喵诺澪染">
+  <title>联机 Galgame · AI 画我猜</title>
+  <link rel="stylesheet" href="/room-assets/room.css">
+</head>
+<body>
+  <section class="screen center draw-screen">
+    <div class="card draw-card">
+      <header class="draw-header">
+        <div>
+          <p class="eyebrow">AI DRAW &amp; GUESS</p>
+          <h1>AI 画我猜</h1>
+          <p class="muted">AI 画，你来猜。猜错可以继续，猜对得分；五题一局。</p>
+        </div>
+        <div class="draw-stats">
+          <span id="draw-round" class="muted small">第 1/5 题</span>
+          <strong id="draw-score">0 分</strong>
+        </div>
+      </header>
+
+      <div class="draw-board-wrap">
+        <svg id="draw-board" viewBox="0 0 100 100" role="img" aria-label="AI 画的图"></svg>
+        <div id="draw-answer" class="draw-answer" hidden></div>
+      </div>
+
+      <p id="draw-hint" class="draw-hint"></p>
+
+      <form id="draw-form" class="draw-form">
+        <input id="draw-input" maxlength="30" autocomplete="off" placeholder="输入你猜的词…" aria-label="你的猜测">
+        <button id="draw-submit" class="primary" type="submit">猜</button>
+      </form>
+
+      <div class="draw-actions">
+        <button id="draw-hint-btn" class="ghost" type="button">提示字数</button>
+        <button id="draw-skip" class="ghost" type="button">跳过这题</button>
+        <button id="draw-next" class="ghost" type="button" hidden>下一题</button>
+        <button id="draw-restart" class="ghost" type="button">重新开始</button>
+      </div>
+
+      <p id="draw-message" class="draw-message"></p>
+
+      <div id="draw-finished" class="draw-finished" hidden>
+        <h2>本局结束</h2>
+        <p id="draw-summary"></p>
+        <button id="draw-again" class="primary" type="button">再来一局</button>
+      </div>
+
+      <ul id="draw-history" class="draw-history"></ul>
+    </div>
+  </section>
+
+  <footer class="brand-footer">由 B站：喵诺澪染 制作 · 开源免费 · 禁止倒卖</footer>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script src="/room-assets/draw.js" defer></script>
+</body>
+</html>

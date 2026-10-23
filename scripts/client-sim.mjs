@@ -21,7 +21,7 @@ globalThis.window = {
 
 await import(pathToFileURL(join(here, '..', 'client', 'client.js')).href)
 assert.ok(loaded, 'client.js 应该调用 window.__ModuleLoader__.load')
-assert.equal(loaded.id, 'dsh-galgame-room')
+assert.equal(loaded.id, 'dsh-story-party')
 
 const react = {
   createElement(type, props, ...children) {

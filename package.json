@@ -21,6 +21,8 @@
     "scripts",
     "cordis.patch.yml",
     "LICENSE",
+    "LICENSE-ARTWORK",
+    "NOTICE",
     "README.md"
   ],
   "keywords": [

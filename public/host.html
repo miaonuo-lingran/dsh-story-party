@@ -13,12 +13,18 @@
       <p class="eyebrow">GALGAME ROOM</p>
       <h1>联机房间</h1>
       <p class="muted">创建一间房，或者加入朋友的房间。</p>
+      <div class="profile-entry">
+        <span class="muted small">头像和昵称可以在这里统一设置</span>
+        <a class="ghost" href="/profile">个人资料</a>
+      </div>
 
       <div class="mode-switch" role="tablist" aria-label="房间模式">
         <button type="button" class="mode-btn is-active" data-mode="create" role="tab" aria-selected="true">创建房间</button>
         <button type="button" class="mode-btn" data-mode="join" role="tab" aria-selected="false">加入房间</button>
         <button type="button" class="mode-btn" data-mode="solo" role="tab" aria-selected="false">自我游玩</button>
       </div>
+
+      <a class="ghost block draw-entry" href="/draw">🎨 AI 画我猜（单人）</a>
 
       <div id="create-panel" class="mode-panel">
         <form id="create-form" class="join-form">
@@ -123,7 +129,7 @@
             <input id="solo-name" maxlength="16" placeholder="澪" autocomplete="nickname" required>
           </label>
           <label class="field">
-            <span>角色（cosplay 卡 / 剧情包）</span>
+            <span>我扮演 / AI 角色（个人本可选；cosplay 卡由 AI 扮演）</span>
             <select id="solo-character">
               <option value="">不用，走内置剧本</option>
             </select>

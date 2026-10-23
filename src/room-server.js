@@ -18,25 +18,55 @@
 import { createServer } from 'node:http'
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { networkInterfaces } from 'node:os'
 import { readZip } from './zip.js'
+import { createDrawGame } from './draw.js'
 
 /** 房间页静态资源根（阶段 2 的页面与脚本） */
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url))
+/** 插件自带素材根（内置立绘；注意立绘是 CC BY-NC-SA 4.0，不是 MIT） */
+const PLUGIN_ASSETS_DIR = fileURLToPath(new URL('../assets/', import.meta.url))
 /** 允许对外提供的文件名白名单：只认这几个，不做目录穿越 */
 const STATIC_FILES = {
   'dialog.js': 'text/javascript; charset=utf-8',
+  'draw.html': 'text/html; charset=utf-8',
+  'draw.js': 'text/javascript; charset=utf-8',
   'host.html': 'text/html; charset=utf-8',
   'host.js': 'text/javascript; charset=utf-8',
   'make.html': 'text/html; charset=utf-8',
   'make.js': 'text/javascript; charset=utf-8',
+  'profile.html': 'text/html; charset=utf-8',
+  'profile.js': 'text/javascript; charset=utf-8',
   'room.html': 'text/html; charset=utf-8',
   'room.css': 'text/css; charset=utf-8',
   'room.js': 'text/javascript; charset=utf-8',
 }
+
+/**
+ * 内置人设卡：鲸鱼娘（立绘为 CC BY-NC-SA 4.0，见 NOTICE / LICENSE-ARTWORK）。
+ * 纯可选：没有 cosplay 卡或剧情包时也能开一局。
+ */
+const BUILTIN_CARDS = [
+  {
+    id: 'builtin-deepseek',
+    name: '鲸鱼娘',
+    emoji: '🐳',
+    gender: 'female',
+    playedBy: 'ai',
+    avatar: '/plugin-assets/characters/deepseek/portraits/neutral.webp',
+    description: 'DeepSeek 的鲸鱼娘，深海女仆工坊的看板娘。',
+    personality: '温柔、认真，偶尔有点笨拙；会默默记住你说过的话。',
+    first_mes: '',
+    system_prompt: '',
+    rules: '',
+    behavior: '',
+    mes_example: '',
+    scenario: '',
+  },
+]
 
 /** 房号字符集：去掉 I/O/0/1，避免口头转述时认错 */
 const ROOM_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -151,6 +181,58 @@ const MYSTERY_PHASES = [
 const MYSTERY_PHASE_IDS = new Set(MYSTERY_PHASES.map((phase) => phase.id))
 const MYSTERY_PHASE_LABEL = Object.fromEntries(MYSTERY_PHASES.map((phase) => [phase.id, phase.label]))
 
+/** 舞台：立绘位置 / 素材路径 / 最大立绘数 */
+const SPRITE_POSITIONS = new Set(['left', 'center', 'right'])
+const ASSET_PATH_RE = /^assets\/[A-Za-z0-9._-]+$/
+const SCENE_MAX_SPRITES = 6
+const AUDIO_EXT_RE = /\.(mp3|ogg|wav|m4a|aac)$/i
+
+/** 个人本作者参与度：free = 只写大纲，guided = 有章节目标，scripted = 关键选项也由作者定 */
+const SOLO_MODES = new Set(['free', 'guided', 'scripted'])
+
+/** 剧情包里的 solo 段：全部字段可选，作者写多少算多少 */
+function soloFromMeta(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const text = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '')
+  const chapters = (Array.isArray(raw.chapters) ? raw.chapters : [])
+    .slice(0, 30)
+    .map((chapter, index) => {
+      const item = chapter && typeof chapter === 'object' ? chapter : {}
+      return {
+        id: text(item.id, 40) || `ch${index + 1}`,
+        title: text(item.title, 60),
+        goal: text(item.goal, 500),
+        choices: (Array.isArray(item.choices) ? item.choices : [])
+          .filter((choice) => typeof choice === 'string')
+          .slice(0, 8)
+          .map((choice) => choice.trim().slice(0, 160))
+          .filter(Boolean),
+      }
+    })
+    .filter((chapter) => chapter.title || chapter.goal || chapter.choices.length > 0)
+  const endings = (Array.isArray(raw.endings) ? raw.endings : [])
+    .slice(0, 20)
+    .map((ending, index) => {
+      const item = ending && typeof ending === 'object' ? ending : {}
+      return {
+        id: text(item.id, 40) || `end${index + 1}`,
+        title: text(item.title, 60),
+        condition: text(item.condition, 300),
+      }
+    })
+    .filter((ending) => ending.title || ending.condition)
+  const premise = text(raw.premise, 4000)
+  const protagonist = text(raw.protagonist, 64)
+  if (!premise && chapters.length === 0 && endings.length === 0) return null
+  return {
+    mode: SOLO_MODES.has(raw.mode) ? raw.mode : 'free',
+    premise,
+    protagonist,
+    chapters,
+    endings,
+  }
+}
+
 function newId() {
   return randomBytes(9).toString('base64url')
 }
@@ -258,6 +340,160 @@ function publicPhase(room) {
   return { id: phase.id, label: phase.label, index: index >= 0 ? index : 0, total: MYSTERY_PHASES.length }
 }
 
+/** 个人本的公开运行状态：章节、选项、结局标记 */
+function publicStory(room) {
+  if (!room.solo || !room.story) return null
+  const meta = room.soloMeta || {}
+  const chapters = Array.isArray(meta.chapters) ? meta.chapters : []
+  const chapter = chapters[room.story.chapterIndex]
+  const protagonist = (room.cast || []).find((item) => item.id === room.story.protagonist)
+  return {
+    mode: room.story.mode || meta.mode || 'free',
+    turn: room.story.turn || 0,
+    chapterIndex: room.story.chapterIndex || 0,
+    chapterCount: chapters.length,
+    chapter: chapter ? { title: chapter.title || '', goal: chapter.goal || '' } : null,
+    protagonist: protagonist ? { id: protagonist.id, name: protagonist.name, emoji: protagonist.emoji } : null,
+    choices: Array.isArray(room.story.choices) ? room.story.choices : [],
+    memory: room.story.memory || emptyMemory(),
+    endingId: room.story.endingId || null,
+  }
+}
+
+/** 舞台状态规范化：素材只认包内 assets/ 或内联图片，立绘只认房间角色 */
+function normalizeScene(room, input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null
+  const assetPaths = new Set(
+    (Array.isArray(room.pack?.assets) ? room.pack.assets : [])
+      .map((asset) => (asset && typeof asset.path === 'string' ? asset.path : ''))
+      .filter((path) => ASSET_PATH_RE.test(path)),
+  )
+  const pickImage = (value) => {
+    const text = typeof value === 'string' ? value.trim() : ''
+    if (text === '') return ''
+    if (assetPaths.has(text)) return text
+    return sanitizeAvatar(text)
+  }
+  const pickAudio = (value) => {
+    const text = typeof value === 'string' ? value.trim() : ''
+    return assetPaths.has(text) && AUDIO_EXT_RE.test(text) ? text : ''
+  }
+  const roster = [...(Array.isArray(room.cast) ? room.cast : [])]
+  if (room.persona) roster.push(room.persona)
+  const sprites = (Array.isArray(input.sprites) ? input.sprites : [])
+    .slice(0, SCENE_MAX_SPRITES)
+    .map((sprite) => {
+      if (!sprite || typeof sprite !== 'object') return null
+      const character = roster.find((item) => item && item.id === String(sprite.characterId ?? ''))
+      const name = character?.name || String(sprite.name ?? '').trim().slice(0, 40)
+      const emoji = character?.emoji || String(sprite.emoji ?? '').trim().slice(0, 8)
+      if (!name && !emoji) return null
+      return {
+        characterId: character?.id ?? null,
+        name,
+        emoji,
+        avatar: character?.avatar || sanitizeAvatar(sprite.avatar) || '',
+        pos: SPRITE_POSITIONS.has(sprite.pos) ? sprite.pos : 'center',
+        emotion: String(sprite.emotion ?? '').trim().slice(0, 20),
+      }
+    })
+    .filter(Boolean)
+  return {
+    background: pickImage(input.background),
+    bgm: pickAudio(input.bgm),
+    sprites,
+    caption: String(input.caption ?? '').trim().slice(0, 200),
+    updatedAt: nowMs(),
+  }
+}
+
+/** 公开的舞台状态：没有就是 null */
+function publicScene(room) {
+  return room.scene ?? null
+}
+
+/** 选项投票的公开形态 */
+function publicChoice(room) {
+  const choice = room.choice
+  if (!choice) return null
+  const counts = {}
+  for (const option of choice.options) counts[option.id] = 0
+  for (const value of Object.values(choice.votes || {})) {
+    if (value in counts) counts[value] += 1
+  }
+  return {
+    id: choice.id,
+    kind: choice.kind,
+    startedAt: choice.startedAt,
+    options: choice.options.map((option) => ({
+      id: option.id,
+      text: option.text,
+      votes: counts[option.id] || 0,
+    })),
+    votes: { ...choice.votes },
+    voted: Object.keys(choice.votes || {}).length,
+    total: Object.keys(room.members).length,
+  }
+}
+
+/** 个人本长期记忆：事实 / 关系 / 好感 / 物品 */
+function emptyMemory() {
+  return { facts: [], relations: {}, affection: {}, items: [], updatedAt: 0 }
+}
+
+function uniqueStrings(list, max) {
+  const out = []
+  for (const item of Array.isArray(list) ? list : []) {
+    if (typeof item !== 'string') continue
+    const text = item.trim().slice(0, 200)
+    if (text && !out.includes(text)) out.push(text)
+    if (out.length >= max) break
+  }
+  return out
+}
+
+function sanitizeMemory(input) {
+  const raw = input && typeof input === 'object' && !Array.isArray(input) ? input : {}
+  const relations = {}
+  if (raw.relations && typeof raw.relations === 'object' && !Array.isArray(raw.relations)) {
+    for (const [key, value] of Object.entries(raw.relations).slice(0, 30)) {
+      const name = String(key).trim().slice(0, 40)
+      const relation = typeof value === 'string' ? value.trim().slice(0, 200) : ''
+      if (name && relation) relations[name] = relation
+    }
+  }
+  const affection = {}
+  if (raw.affection && typeof raw.affection === 'object' && !Array.isArray(raw.affection)) {
+    for (const [key, value] of Object.entries(raw.affection).slice(0, 30)) {
+      const name = String(key).trim().slice(0, 40)
+      const number = Number(value)
+      if (name && Number.isFinite(number)) {
+        affection[name] = Math.max(-100, Math.min(100, Math.round(number)))
+      }
+    }
+  }
+  return {
+    facts: uniqueStrings(raw.facts, 40),
+    relations,
+    affection,
+    items: uniqueStrings(raw.items, 40),
+    updatedAt: nowMs(),
+  }
+}
+
+function mergeMemory(current, patch) {
+  const base = sanitizeMemory(current || {})
+  const next = sanitizeMemory(patch || {})
+  const mergeObject = (left, right) => ({ ...left, ...right })
+  return {
+    facts: uniqueStrings([...base.facts, ...next.facts], 40),
+    relations: mergeObject(base.relations, next.relations),
+    affection: mergeObject(base.affection, next.affection),
+    items: uniqueStrings([...base.items, ...next.items], 40),
+    updatedAt: nowMs(),
+  }
+}
+
 /** 私聊消息只给发送者、接收者和 GM 看 */
 function messageVisibleTo(message, memberId, role) {
   if (!message || message.private !== true) return true
@@ -295,6 +531,9 @@ function publicRoom(room) {
     mode: room.mode || room.pack?.mode || 'roleplay',
     phase: publicPhase(room),
     cast: publicCast(room),
+    story: publicStory(room),
+    scene: publicScene(room),
+    choice: publicChoice(room),
     hasTruth: Boolean(room.truth),
     ai: { status: room.ai.status, lastError: room.ai.lastError ?? null },
     aiName: room.aiName ?? null,
@@ -330,6 +569,13 @@ function personaFromCard(card) {
   const text = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '')
   const name = text(card.name, 40)
   if (!name) return null
+  const avatarText = typeof card.avatar === 'string' ? card.avatar.trim() : ''
+  const assetAvatar = /^assets\/[A-Za-z0-9._-]+$/.test(avatarText) ? avatarText : ''
+  const builtinAvatar = /^\/plugin-assets\/characters\/[A-Za-z0-9._/-]+\.(webp|png|jpe?g|gif)$/i.test(
+    avatarText,
+  )
+    ? avatarText
+    : ''
   return {
     id: text(card.id, 64),
     name,
@@ -348,11 +594,7 @@ function personaFromCard(card) {
           .slice(0, 12)
           .map((item) => item.slice(0, 40))
       : [],
-    avatar:
-      sanitizeAvatar(card.avatar) ||
-      (typeof card.avatar === 'string' && /^assets\/[A-Za-z0-9._-]+$/.test(card.avatar.trim())
-        ? card.avatar.trim()
-        : ''),
+    avatar: sanitizeAvatar(avatarText) || assetAvatar || builtinAvatar,
     description: text(card.description, 4000),
     personality: text(card.personality, 3000),
     scenario: text(card.scenario, 4000),
@@ -399,6 +641,14 @@ function packSummary(pack) {
     recommendedPlayers: pack.recommendedPlayers || { min: 2, max: 4 },
     /** 汤底只告诉房主 / GM，列表里只暴露「有没有」 */
     hasTruth: Boolean(pack.truth),
+    solo: pack.solo
+      ? {
+          mode: pack.solo.mode,
+          chapters: pack.solo.chapters.length,
+          endings: pack.solo.endings.length,
+          protagonist: pack.solo.protagonist,
+        }
+      : null,
     hasSecrets: (Array.isArray(pack.characters) ? pack.characters : []).some((character) =>
       Boolean(character.secret),
     ),
@@ -552,6 +802,7 @@ function packFromFiles(files) {
     description: String(meta.description ?? '').slice(0, 300),
     scenario,
     truth,
+    solo: soloFromMeta(meta.solo),
     characters,
     assets,
     map: packMap,
@@ -678,6 +929,8 @@ export function createRoomServer(options = {}) {
   if (typeof cfg.generate !== 'function') {
     throw new TypeError('createRoomServer: options.generate 必须是函数')
   }
+  /** 单人 AI 画我猜（每轮一次模型调用；模型失败时用内置题库兜底） */
+  const drawGame = createDrawGame({ generate: cfg.generate })
   const rooms = new Map()
   /** roomId -> Set<ServerResponse>（SSE 长连接） */
   const clients = new Map()
@@ -760,6 +1013,73 @@ export function createRoomServer(options = {}) {
     return room._saveChain
   }
 
+  // ---- 个人本存档 / 回滚 ---------------------------------------------------
+
+  /** 个人本存档快照：整份消息 + story + scene + 摘要，读档时整份恢复 */
+  function snapshotOf(room, kind, name) {
+    return {
+      id: 'save_' + newId().slice(0, 8),
+      kind,
+      name: String(name || (kind === 'auto' ? '自动存档' : '手动存档')).slice(0, 40),
+      at: nowMs(),
+      turn: room.story?.turn || 0,
+      chapter: publicStory(room)?.chapter?.title || '',
+      messageCount: room.messages.length,
+      seq: room.seq,
+      aiCursor: room.ai.cursor || 0,
+      messages: room.messages.map((message) => ({ ...message })),
+      story: room.story ? JSON.parse(JSON.stringify(room.story)) : null,
+      scene: room.scene ? JSON.parse(JSON.stringify(room.scene)) : null,
+      summary: room.summary || '',
+      summarySeq: room.summarySeq || 0,
+    }
+  }
+
+  function snapshotSummary(snapshot) {
+    if (!snapshot) return null
+    return {
+      id: snapshot.id,
+      kind: snapshot.kind,
+      name: snapshot.name,
+      at: snapshot.at,
+      turn: snapshot.turn,
+      chapter: snapshot.chapter,
+      messageCount: snapshot.messageCount,
+    }
+  }
+
+  function restoreSnapshot(room, snapshot) {
+    room.messages = Array.isArray(snapshot.messages)
+      ? snapshot.messages.map((message) => ({ ...message }))
+      : []
+    room.seq = Number(snapshot.seq) || 0
+    room.ai = {
+      status: 'idle',
+      cursor: Number(snapshot.aiCursor) || 0,
+      lastError: null,
+    }
+    room.story = snapshot.story ? JSON.parse(JSON.stringify(snapshot.story)) : room.story
+    if (room.story && !room.story.memory) room.story.memory = emptyMemory()
+    room.scene = snapshot.scene ? JSON.parse(JSON.stringify(snapshot.scene)) : null
+    room.summary = snapshot.summary || ''
+    room.summarySeq = Number(snapshot.summarySeq) || 0
+    room.choice = null
+    room._timer && clearTimeout(room._timer)
+    room._timer = null
+    room._force = false
+    room._dirty = false
+    room._reveal = false
+    room._phaseDirective = ''
+    room._choiceDirective = ''
+  }
+
+  function broadcastRestore(room) {
+    broadcast(room.id, 'restore', {
+      room: publicRoom(room),
+      messages: room.messages,
+    })
+  }
+
   // ---- 剧情包 -------------------------------------------------------------
 
   async function loadPack(id) {
@@ -827,6 +1147,7 @@ export function createRoomServer(options = {}) {
       description: built.description,
       scenario: built.scenario,
       truth: built.truth || '',
+      solo: built.solo || null,
       characters: built.characters,
       map: built.map,
       assets: built.assets,
@@ -944,7 +1265,10 @@ export function createRoomServer(options = {}) {
     return messages.map((m) =>
       m.kind === 'ai'
         ? { role: 'assistant', content: m.text }
-        : { role: 'user', content: `${m.name}（${roleLabel(m.role)}）：${m.text}` },
+        : {
+            role: 'user',
+            content: `${m.name}（${room.solo ? '主角' : roleLabel(m.role)}）：${m.text}`,
+          },
     )
   }
 
@@ -952,7 +1276,7 @@ export function createRoomServer(options = {}) {
     broadcast(room.id, 'vote', { vote: publicVote(room) })
   }
 
-  function buildSystemPrompt(room, force, reveal, phaseDirective = '') {
+  function buildSystemPrompt(room, force, reveal, phaseDirective = '', choiceDirective = '') {
     const roster = Object.values(room.members)
       .map((m) => `- ${m.name}（${roleLabel(m.role)}）`)
       .join('\n')
@@ -990,6 +1314,82 @@ export function createRoomServer(options = {}) {
       `【房间】${room.title}`,
       '【参与者】',
       roster || '（暂无）',
+      ...(room.solo
+        ? (() => {
+            const meta = room.soloMeta || {}
+            const story = room.story || {}
+            const chapters = Array.isArray(meta.chapters) ? meta.chapters : []
+            const chapter = chapters[story.chapterIndex]
+            const endings = Array.isArray(meta.endings) ? meta.endings : []
+            const memory = story.memory || emptyMemory()
+            const memoryLines = [
+              ...(memory.facts && memory.facts.length > 0 ? [`事实：${memory.facts.join('；')}`] : []),
+              ...(memory.relations && Object.keys(memory.relations).length > 0
+                ? [
+                    `关系：${Object.entries(memory.relations)
+                      .map(([name, relation]) => `${name}：${relation}`)
+                      .join('；')}`,
+                  ]
+                : []),
+              ...(memory.affection && Object.keys(memory.affection).length > 0
+                ? [
+                    `好感：${Object.entries(memory.affection)
+                      .map(([name, value]) => `${name}：${value}`)
+                      .join('；')}`,
+                  ]
+                : []),
+              ...(memory.items && memory.items.length > 0 ? [`物品：${memory.items.join('、')}`] : []),
+            ]
+            const protagonistCharacter = (room.cast || []).find(
+              (item) => item.id === story.protagonist,
+            )
+            const modeLabel = { free: '自由', guided: '引导', scripted: '剧本' }[story.mode || meta.mode] || '自由'
+            return [
+              '',
+              '【个人本】',
+              `模式：${modeLabel}`,
+              ...(meta.premise ? [`前提：${meta.premise}`] : []),
+              ...(protagonistCharacter
+                ? [`主角：${protagonistCharacter.name}（由玩家扮演）`]
+                : []),
+              ...(room.cast && room.cast.length > 0 && mode !== 'mystery'
+                ? [
+                    '【角色】',
+                    ...room.cast.map((character) => {
+                      const isPlayer =
+                        character.id === story.protagonist ||
+                        Boolean(character.assigneeId && room.members[character.assigneeId])
+                      return `- ${character.name}（${isPlayer ? '玩家扮演' : 'AI 扮演'}）`
+                    }),
+                  ]
+                : []),
+              ...(chapter
+                ? [
+                    `当前章节：${chapter.title || `第 ${(story.chapterIndex || 0) + 1} 章`}`,
+                    ...(chapter.goal ? [`章节目标：${chapter.goal}`] : []),
+                  ]
+                : []),
+              ...(chapter && Array.isArray(chapter.choices) && chapter.choices.length > 0
+                ? ['作者写的关键选项（优先使用，但玩家可以自由输入）：', ...chapter.choices.map((choice) => `- ${choice}`)]
+                : []),
+              ...(endings.length > 0
+                ? [
+                    '可能触发的结局（条件满足时可以收束剧情）：',
+                    ...endings.map((ending) => `- ${ending.title || ending.id}${ending.condition ? `：${ending.condition}` : ''}`),
+                  ]
+                : []),
+              ...(memoryLines.length > 0 ? ['【长期记忆】', ...memoryLines] : []),
+              '需要记住新的事实、关系、好感或物品时，在回复最后单独一行输出 <memory>{"facts":["..."],"relations":{"角色":"关系"},"affection":{"角色":1},"items":["..."]}</memory>，只写新增或变化，不要复述整段记忆；标记不会显示给玩家。',
+              '这是单人游玩：玩家的发言就是主角的行动。不要替玩家做决定，不要替玩家说话。',
+              '每轮回复结尾可以给 2-4 个建议选项，放在 <choices> 和 </choices> 之间，每行一个，不要编号；选项不会显示在正文里。',
+              (story.mode || meta.mode) === 'scripted'
+                ? '尽量围绕作者的关键选项推进；玩家自由输入时也要接住，不要无视。'
+                : (story.mode || meta.mode) === 'guided'
+                  ? '参考章节目标推进，但玩家想自由行动时不要强行拉回。'
+                  : '自由推进，章节目标只是软引导。',
+            ]
+          })()
+        : []),
       ...(mode === 'mystery' && cast.length > 0
         ? [
             '',
@@ -1039,6 +1439,26 @@ export function createRoomServer(options = {}) {
               }`
             }),
           ]
+        : []),
+      ...(room.pack && Array.isArray(room.pack.assets) && room.pack.assets.length > 0
+        ? (() => {
+            const assets = room.pack.assets
+              .map((asset) => (asset && typeof asset.path === 'string' ? asset.path : ''))
+              .filter((path) => ASSET_PATH_RE.test(path))
+            return [
+              '',
+              '【舞台素材】',
+              ...assets.map((path) => `- ${path}`),
+              ...(room.scene
+                ? [
+                    `当前舞台：背景 ${room.scene.background || '无'}；立绘 ${
+                      (room.scene.sprites || []).map((sprite) => `${sprite.name}(${sprite.pos})`).join('、') || '无'
+                    }`,
+                  ]
+                : []),
+              '需要换场景时，在回复最后单独一行输出 <scene>{"background":"assets/...","sprites":[{"characterId":"...","pos":"left|center|right","emotion":"..."}],"bgm":"assets/...","caption":"..."}</scene>，不要解释；background 和 bgm 只能用上面的素材。',
+            ]
+          })()
         : []),
       ...(room.summary ? ['', '【之前剧情摘要】', room.summary] : []),
       ...(Array.isArray(room.agents) && room.agents.length > 0
@@ -1101,7 +1521,11 @@ export function createRoomServer(options = {}) {
       instructions.push(
         `现在进入「${phase.label}」阶段：${phaseRule} 先用一句话交代阶段目标，再让玩家行动。`,
       )
-    } else if (force && !reveal) {
+    }
+    if (choiceDirective) {
+      instructions.push(choiceDirective)
+    }
+    if (force && !reveal && !(phaseDirective && phase) && !choiceDirective) {
       instructions.push('现在立即推进剧情：给出新的场景、事件或对话，让故事往前走一步。')
     }
     return instructions.length > 0
@@ -1140,6 +1564,75 @@ export function createRoomServer(options = {}) {
         (agent) => String(agent.id).toLowerCase() === key || String(agent.name).toLowerCase() === key,
       ) || null
     )
+  }
+
+  /** AI 换场景指令：<scene>{...}</scene>，剥掉标记，返回 JSON */
+  function extractSceneDirective(text) {
+    let scene = null
+    const cleaned = String(text ?? '')
+      .replace(/<scene\b[^>]*>([\s\S]*?)<\/scene>/gi, (_, block) => {
+        if (scene) return ''
+        try {
+          const parsed = JSON.parse(
+            String(block ?? '')
+              .trim()
+              .replace(/^```(?:json)?\s*/i, '')
+              .replace(/```$/, '')
+              .trim(),
+          )
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) scene = parsed
+        } catch {
+          /* 不是合法 JSON：只剥掉标记 */
+        }
+        return ''
+      })
+      .trim()
+    return { text: cleaned, scene }
+  }
+
+  /** 个人本长期记忆：<memory>{...}</memory>，剥掉标记，返回 JSON */
+  function extractMemoryDirective(text) {
+    let memory = null
+    const cleaned = String(text ?? '')
+      .replace(/<memory\b[^>]*>([\s\S]*?)<\/memory>/gi, (_, block) => {
+        if (memory) return ''
+        try {
+          const parsed = JSON.parse(
+            String(block ?? '')
+              .trim()
+              .replace(/^```(?:json)?\s*/i, '')
+              .replace(/```$/, '')
+              .trim(),
+          )
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) memory = parsed
+        } catch {
+          /* 不是合法 JSON：只剥掉标记 */
+        }
+        return ''
+      })
+      .trim()
+    return { text: cleaned, memory }
+  }
+
+  /** 个人本建议选项：<choices> 每行一个，剥掉标记后返回正文与选项 */
+  function extractChoices(text) {
+    let choices = []
+    const cleaned = String(text ?? '')
+      .replace(/<choices\b[^>]*>([\s\S]*?)<\/choices>/gi, (_, block) => {
+        choices = String(block ?? '')
+          .split('\n')
+          .map((line) =>
+            line
+              .replace(/^\s*(?:[-*•]|\d+[.、)])\s*/, '')
+              .trim()
+              .slice(0, 120),
+          )
+          .filter(Boolean)
+          .slice(0, 6)
+        return ''
+      })
+      .trim()
+    return { text: cleaned, choices }
   }
 
   function hasPendingOnline(room) {
@@ -1228,9 +1721,14 @@ export function createRoomServer(options = {}) {
     // 刚切换阶段时给模型一句额外指令（只生效这一轮）
     const phaseDirective = room._phaseDirective || ''
     room._phaseDirective = ''
+    const choiceDirective = room._choiceDirective || ''
+    room._choiceDirective = ''
 
     const batch = room.messages.filter((m) => m.seq > room.ai.cursor && m.inAiContext)
     if (batch.length === 0 && !force) return
+
+    // 每轮生成前留一份自动存档：回退一步就是回到 AI 开口之前
+    if (room.solo) room.autoSnapshot = snapshotOf(room, 'auto', '自动存档')
 
     room.ai.status = 'thinking'
     broadcast(room.id, 'ai', { status: 'thinking', seq: room.seq })
@@ -1239,7 +1737,7 @@ export function createRoomServer(options = {}) {
     let replyReasoning = ''
     try {
       const reply = await cfg.generate({
-        system: buildSystemPrompt(room, force, reveal, phaseDirective),
+        system: buildSystemPrompt(room, force, reveal, phaseDirective, choiceDirective),
         messages: buildAiContext(room),
         force,
         roomId: room.id,
@@ -1265,7 +1763,10 @@ export function createRoomServer(options = {}) {
     }
 
     const parsedReply = extractSpeakDirective(replyText)
-    const text = normalizeAiText(parsedReply.text)
+    const parsedScene = extractSceneDirective(parsedReply.text)
+    const parsedChoice = extractChoices(parsedScene.text)
+    const parsedMemory = extractMemoryDirective(parsedChoice.text)
+    const text = normalizeAiText(parsedMemory.text)
     if (room.closed) {
       // 生成期间房间被关掉：不往已关闭的房间追加消息
       room.ai.status = 'idle'
@@ -1274,6 +1775,14 @@ export function createRoomServer(options = {}) {
     const silent = text === '' || SILENT_RE.test(text)
     if (!silent) {
       appendMessage(room, { kind: 'ai', name: room.aiName ?? cfg.aiName, role: 'ai', text, inAiContext: true })
+    }
+    // AI 场景指令：只接受包内素材与房间角色，更新后广播给所有人
+    if (parsedScene.scene) {
+      const scene = normalizeScene(room, parsedScene.scene)
+      if (scene) {
+        room.scene = scene
+        broadcast(room.id, 'scene', { scene: publicScene(room) })
+      }
     }
     // 主代理用 <speak 角色名> 点名：自动让子代理接一句（每轮最多一次）
     let autoSpeakFailed = false
@@ -1287,6 +1796,24 @@ export function createRoomServer(options = {}) {
           room.ai.lastError = error instanceof Error ? error.message : String(error)
         }
       }
+    }
+    // 个人本：记下这一轮的建议选项与回合数，客户端据此渲染选项 chips
+    if (room.solo) {
+      room.story = room.story || {
+        mode: room.soloMeta?.mode || 'free',
+        chapterIndex: 0,
+        flags: {},
+        affection: {},
+        choices: [],
+        turn: 0,
+        endingId: null,
+      }
+      room.story.turn = (room.story.turn || 0) + 1
+      room.story.choices = parsedChoice.choices
+      if (parsedMemory.memory) {
+        room.story.memory = mergeMemory(room.story.memory || emptyMemory(), parsedMemory.memory)
+      }
+      broadcast(room.id, 'story', { story: publicStory(room) })
     }
     // 这一批消息不论 AI 是否接话都算「看过」，否则 <silent> 之后会反复重发
     room.ai.cursor = room.seq
@@ -1348,6 +1875,73 @@ export function createRoomServer(options = {}) {
 
   // ---- 路由 ---------------------------------------------------------------
 
+  /** 插件内置立绘：只允许 assets/characters 下的 webp/png/jpeg/gif */
+  async function servePluginAsset(req, res, rel) {
+    if (
+      !/^characters\/[A-Za-z0-9._/-]+\.(webp|png|jpe?g|gif)$/i.test(rel) ||
+      rel.includes('..')
+    ) {
+      return sendError(res, 404, 'not found')
+    }
+    const root = resolve(PLUGIN_ASSETS_DIR)
+    const target = resolve(root, rel)
+    if (target !== root && !target.startsWith(root + sep)) return sendError(res, 404, 'not found')
+    const types = {
+      '.webp': 'image/webp',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+    }
+    const ext = target.slice(target.lastIndexOf('.')).toLowerCase()
+    try {
+      const data = await readFile(target)
+      res.writeHead(200, {
+        'content-type': types[ext] || 'application/octet-stream',
+        'content-length': data.length,
+        'cache-control': 'public, max-age=3600',
+        'x-content-type-options': 'nosniff',
+      })
+      res.end(req.method === 'HEAD' ? undefined : data)
+    } catch {
+      sendError(res, 404, 'not found')
+    }
+  }
+
+  /** 剧情包素材：只允许 assets/ 下的单层安全文件名，拒绝 svg（可带脚本） */
+  async function servePackAsset(req, res, packId, name) {
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(packId) || !/^[A-Za-z0-9._-]+$/.test(name) || name.includes('..')) {
+      return sendError(res, 404, 'not found')
+    }
+    const types = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.webp': 'image/webp',
+      '.gif': 'image/gif',
+      '.mp3': 'audio/mpeg',
+      '.ogg': 'audio/ogg',
+      '.wav': 'audio/wav',
+      '.m4a': 'audio/mp4',
+      '.aac': 'audio/aac',
+    }
+    const ext = name.slice(name.lastIndexOf('.')).toLowerCase()
+    const contentType = types[ext]
+    if (!contentType) return sendError(res, 404, 'not found')
+    try {
+      const data = await readFile(join(packsDir, packId, 'assets', name))
+      res.writeHead(200, {
+        'content-type': contentType,
+        'content-length': data.length,
+        'cache-control': 'public, max-age=3600',
+        'x-content-type-options': 'nosniff',
+      })
+      res.end(req.method === 'HEAD' ? undefined : data)
+    } catch {
+      sendError(res, 404, 'not found')
+    }
+  }
+
   async function route(req, res) {
     res.setHeader('access-control-allow-origin', '*')
     res.setHeader('access-control-allow-headers', 'authorization, content-type, x-invite-token')
@@ -1372,11 +1966,31 @@ export function createRoomServer(options = {}) {
     if (req.method === 'GET' && parts[0] === 'make' && parts.length === 1) {
       return serveStatic(res, 'make.html')
     }
+    if (req.method === 'GET' && parts[0] === 'profile' && parts.length === 1) {
+      return serveStatic(res, 'profile.html')
+    }
+    if (req.method === 'GET' && parts[0] === 'draw' && parts.length === 1) {
+      return serveStatic(res, 'draw.html')
+    }
     if (req.method === 'GET' && parts[0] === 'room' && parts.length === 2) {
       return serveStatic(res, 'room.html')
     }
     if (req.method === 'GET' && parts[0] === 'room-assets' && parts.length === 2) {
       return serveStatic(res, parts[1])
+    }
+    if (
+      (req.method === 'GET' || req.method === 'HEAD') &&
+      parts[0] === 'pack-assets' &&
+      parts.length >= 3
+    ) {
+      return servePackAsset(req, res, parts[1], parts.slice(2).join('/'))
+    }
+    if (
+      (req.method === 'GET' || req.method === 'HEAD') &&
+      parts[0] === 'plugin-assets' &&
+      parts.length >= 3
+    ) {
+      return servePluginAsset(req, res, parts.slice(1).join('/'))
     }
     if (parts[0] !== 'api') return sendError(res, 404, 'not found')
     if (parts[1] === 'health' && req.method === 'GET') {
@@ -1455,7 +2069,7 @@ export function createRoomServer(options = {}) {
         }
       }
       return sendJson(res, 200, {
-        cards: cards
+        cards: [...BUILTIN_CARDS, ...cards]
           .map((card) => personaFromCard(card))
           .filter(Boolean)
           // 开房页只需要选卡信息；角色本不经这里下发
@@ -1494,6 +2108,64 @@ export function createRoomServer(options = {}) {
           return sendJson(res, 200, { deleted: true })
         }
         return sendError(res, 405, 'method not allowed')
+      }
+      return sendError(res, 404, 'not found')
+    }
+    if (parts[1] === 'draw') {
+      if (parts[2] !== 'sessions') return sendError(res, 404, 'not found')
+      if (parts.length === 3) {
+        if (req.method !== 'POST') return sendError(res, 405, 'method not allowed')
+        let body = {}
+        try {
+          body = await readJsonBody(req)
+        } catch {
+          body = {}
+        }
+        const session = await drawGame.create(body.rounds)
+        return sendJson(res, 201, { session })
+      }
+      if (parts.length === 4) {
+        if (req.method !== 'GET') return sendError(res, 405, 'method not allowed')
+        const session = drawGame.get(parts[3])
+        if (!session) return sendError(res, 404, '游戏不存在或已过期')
+        return sendJson(res, 200, { session })
+      }
+      if (parts.length === 5) {
+        if (req.method !== 'POST') return sendError(res, 405, 'method not allowed')
+        const id = parts[3]
+        const action = parts[4]
+        let body = {}
+        if (action === 'guess') {
+          try {
+            body = await readJsonBody(req)
+          } catch {
+            body = {}
+          }
+        }
+        if (action === 'next') {
+          const session = await drawGame.next(id)
+          if (!session) return sendError(res, 404, '游戏不存在或已过期')
+          if (session.error) return sendError(res, 409, session.error)
+          return sendJson(res, 200, { session })
+        }
+        if (action === 'guess') {
+          const result = drawGame.guess(id, body.text)
+          if (!result) return sendError(res, 404, '游戏不存在或已过期')
+          if (result.error) return sendError(res, 409, result.error)
+          return sendJson(res, 200, result)
+        }
+        if (action === 'skip') {
+          const result = drawGame.skip(id)
+          if (!result) return sendError(res, 404, '游戏不存在或已过期')
+          if (result.error) return sendError(res, 409, result.error)
+          return sendJson(res, 200, result)
+        }
+        if (action === 'hint') {
+          const result = drawGame.hint(id)
+          if (!result) return sendError(res, 404, '游戏不存在或已过期')
+          return sendJson(res, 200, result)
+        }
+        return sendError(res, 404, 'not found')
       }
       return sendError(res, 404, 'not found')
     }
@@ -1559,6 +2231,34 @@ export function createRoomServer(options = {}) {
       return sendError(res, 405, 'method not allowed')
     }
     if (sub === 'phase' && req.method === 'POST') return roomPhase(req, res, room, url)
+    if (sub === 'scene') {
+      if (req.method === 'GET') {
+        const member = findMember(room, tokenOf(req, url))
+        if (!member && !inviteOk(room, req, url)) return sendError(res, 403, '需要邀请令牌或成员令牌')
+        return sendJson(res, 200, { scene: publicScene(room) })
+      }
+      if (req.method === 'POST') return setScene(req, res, room, url)
+      return sendError(res, 405, 'method not allowed')
+    }
+    if (sub === 'choice' && req.method === 'POST') return roomChoice(req, res, room, url)
+    if (sub === 'saves') {
+      if (parts.length === 4) {
+        if (req.method === 'GET') return listSaves(req, res, room, url)
+        if (req.method === 'POST') return createSave(req, res, room, url)
+        return sendError(res, 405, 'method not allowed')
+      }
+      if (parts.length === 5 && req.method === 'DELETE') return deleteSave(req, res, room, url, parts[4])
+      if (parts.length === 6 && parts[5] === 'load' && req.method === 'POST') {
+        return loadSave(req, res, room, url, parts[4])
+      }
+      return sendError(res, 404, 'not found')
+    }
+    if (sub === 'rewind' && req.method === 'POST') return rewindStory(req, res, room, url)
+    if (sub === 'memory') {
+      if (req.method === 'GET') return getMemory(req, res, room, url)
+      if (req.method === 'PATCH') return patchMemory(req, res, room, url)
+      return sendError(res, 405, 'method not allowed')
+    }
     if (sub === 'leave' && req.method === 'POST') return leaveRoom(req, res, room, url)
 
     // /api/rooms/:id 本身
@@ -1586,12 +2286,14 @@ export function createRoomServer(options = {}) {
     } catch (error) {
       return sendError(res, 400, error instanceof Error ? error.message : 'bad body')
     }
-    let cards = []
+    let cards = body.packId ? [] : BUILTIN_CARDS.slice()
+    // 自我游玩：单人房间，只有 GM 和 AI（后面 pack 分支还要用它决定主角）
+    const solo = body.solo === true
     if (!body.packId && typeof cfg.loadCards === 'function') {
       try {
-        cards = (await cfg.loadCards()) || []
+        cards = [...cards, ...((await cfg.loadCards()) || [])]
       } catch {
-        cards = []
+        /* 角色库读不到时仍保留内置角色 */
       }
     }
     let persona = null
@@ -1599,7 +2301,9 @@ export function createRoomServer(options = {}) {
     let packCharacters = []
     let packScenario = ''
     let packTruth = ''
+    let packSolo = null
     let packMode = 'roleplay'
+    let playerCharacterId = ''
     let defaultTitle = ''
     if (body.packId) {
       const pack = await loadPack(String(body.packId))
@@ -1612,8 +2316,21 @@ export function createRoomServer(options = {}) {
       if (!persona) return sendError(res, 400, '剧情包里的人物卡不完整')
       packScenario = pack.scenario || ''
       packTruth = typeof pack.truth === 'string' ? pack.truth : ''
+      packSolo = pack.solo || null
       packMode = PACK_MODES.has(pack.mode) ? pack.mode : 'roleplay'
       defaultTitle = `${pack.name} · ${character.name}`
+      // 个人本：作者指定了主角，或玩家选了人类角色时，AI 当旁白，玩家扮演该角色
+      if (solo && packSolo) {
+        const wanted = packSolo.protagonist || String(body.characterId ?? '')
+        const playerCharacter = characters.find(
+          (item) => item.id === wanted && item.playedBy !== 'ai',
+        )
+        if (playerCharacter) {
+          playerCharacterId = playerCharacter.id
+          persona = null
+          defaultTitle = pack.name
+        }
+      }
       packInfo = {
         id: pack.id,
         name: pack.name,
@@ -1622,6 +2339,7 @@ export function createRoomServer(options = {}) {
         intro: pack.intro || '',
         recommendedPlayers: pack.recommendedPlayers || { min: 2, max: 4 },
         hasTruth: Boolean(packTruth),
+        assets: Array.isArray(pack.assets) ? pack.assets : [],
         map: pack.map || { locations: [], routes: [] },
       }
       // 剧本杀里如果选中的人类角色只是「玩家位」，AI 就当 GM/旁白，
@@ -1659,12 +2377,16 @@ export function createRoomServer(options = {}) {
       token: newToken(),
       joinedAt: nowMs(),
       lastSeenAt: nowMs(),
+      avatar: sanitizeAvatar(body.avatar),
+    }
+    if (playerCharacterId) {
+      gm.characterId = playerCharacterId
+      const playerCharacter = cast.find((item) => item.id === playerCharacterId)
+      if (playerCharacter) playerCharacter.assigneeId = gm.id
     }
     const passwordText = String(body.password ?? '').trim()
     // 宿主绑定的 DSH 会话 id：玩家本地副本按它比对，变了就整份重新同步
     const sessionId = String(body.sessionId ?? '').trim().slice(0, 80) || null
-    // 自我游玩：单人房间，只有 GM 和 AI
-    const solo = body.solo === true
     // AI 读取历史条数：0 = 全部；不传 = 用插件默认
     const requestedContext = Number(body.contextMessages)
     const contextMessages =
@@ -1683,6 +2405,23 @@ export function createRoomServer(options = {}) {
       // 汤底 / 真相：只留在房主主机与系统提示词里，不进 publicRoom
       truth: packTruth.slice(0, 20000),
       cast,
+      // 个人本：作者只写大纲也能跑；story 是运行期状态
+      soloMeta: solo ? packSolo : null,
+      story: solo
+        ? {
+            mode: packSolo?.mode || 'free',
+            protagonist: playerCharacterId,
+            chapterIndex: 0,
+            flags: {},
+            affection: {},
+            choices: [],
+            memory: emptyMemory(),
+            turn: 0,
+            endingId: null,
+          }
+        : null,
+      scene: null,
+      choice: null,
       // 长局滚动摘要：默认开，房主可关
       autoSummary: body.autoSummary !== false,
       summary: '',
@@ -1690,7 +2429,13 @@ export function createRoomServer(options = {}) {
       // 子代理名册：剧情包里除主角外的 AI 角色，各管各的台词
       agents: packCharacters
         .map((character) => personaFromCard(character))
-        .filter((item) => item && item.playedBy !== 'human' && item.id !== persona?.id)
+        .filter(
+          (item) =>
+            item &&
+            item.playedBy !== 'human' &&
+            item.id !== persona?.id &&
+            item.id !== playerCharacterId,
+        )
         .map((item) => ({
           id: item.id,
           name: item.name,
@@ -1789,7 +2534,9 @@ export function createRoomServer(options = {}) {
       role,
       // 同一台机器再次进同一间房：沿用 uid / 头像
       uid: (identity && typeof identity.uid === 'string' && identity.uid) || newUid(),
-      avatar: identity && typeof identity.avatar === 'string' ? identity.avatar : '',
+      avatar:
+        sanitizeAvatar(body.avatar) ||
+        (identity && typeof identity.avatar === 'string' ? identity.avatar : ''),
       machineCode,
       token: newToken(),
       joinedAt: nowMs(),
@@ -2245,6 +2992,208 @@ export function createRoomServer(options = {}) {
     await persist(room)
     if (changed && body.narrate !== false) scheduleAi(room, { force: true })
     return sendJson(res, 200, { phase: publicPhase(room), changed })
+  }
+
+  function savesPayload(room) {
+    return {
+      auto: snapshotSummary(room.autoSnapshot),
+      saves: (Array.isArray(room.saves) ? room.saves : []).map(snapshotSummary),
+    }
+  }
+
+  async function listSaves(req, res, room, url) {
+    const member = findMember(room, tokenOf(req, url))
+    if (!member) return sendError(res, 403, '需要成员令牌')
+    if (!room.solo) return sendError(res, 409, '存档只用于单人本')
+    return sendJson(res, 200, savesPayload(room))
+  }
+
+  async function createSave(req, res, room, url) {
+    const member = findMember(room, tokenOf(req, url))
+    if (!member) return sendError(res, 403, '需要成员令牌')
+    if (!room.solo) return sendError(res, 409, '存档只用于单人本')
+    let body
+    try {
+      body = await readJsonBody(req)
+    } catch (error) {
+      return sendError(res, 400, error instanceof Error ? error.message : 'bad body')
+    }
+    room.saves = Array.isArray(room.saves) ? room.saves : []
+    const snapshot = snapshotOf(
+      room,
+      'manual',
+      String(body.name ?? '').trim().slice(0, 40) || `存档 ${room.saves.length + 1}`,
+    )
+    room.saves.push(snapshot)
+    if (room.saves.length > 5) room.saves.shift()
+    member.lastSeenAt = nowMs()
+    await persist(room)
+    const payload = savesPayload(room)
+    broadcast(room.id, 'saves', payload)
+    return sendJson(res, 201, { save: snapshotSummary(snapshot), ...payload })
+  }
+
+  async function deleteSave(req, res, room, url, saveId) {
+    const member = findMember(room, tokenOf(req, url))
+    if (!member) return sendError(res, 403, '需要成员令牌')
+    if (!room.solo) return sendError(res, 409, '存档只用于单人本')
+    const index = (room.saves || []).findIndex((snapshot) => snapshot.id === saveId)
+    if (index < 0) return sendError(res, 404, '存档不存在')
+    room.saves.splice(index, 1)
+    await persist(room)
+    const payload = savesPayload(room)
+    broadcast(room.id, 'saves', payload)
+    return sendJson(res, 200, payload)
+  }
+
+  async function loadSave(req, res, room, url, saveId) {
+    const member = findMember(room, tokenOf(req, url))
+    if (!member) return sendError(res, 403, '需要成员令牌')
+    if (!room.solo) return sendError(res, 409, '存档只用于单人本')
+    const snapshot =
+      saveId === 'auto'
+        ? room.autoSnapshot
+        : (room.saves || []).find((item) => item.id === saveId)
+    if (!snapshot) return sendError(res, 404, '存档不存在')
+    restoreSnapshot(room, snapshot)
+    // 读档后旧的「自动存档」属于未来进度，清掉，等下一轮重新生成
+    room.autoSnapshot = null
+    member.lastSeenAt = nowMs()
+    await persist(room)
+    broadcastRestore(room)
+    broadcast(room.id, 'saves', savesPayload(room))
+    return sendJson(res, 200, { loaded: true, room: publicRoom(room) })
+  }
+
+  async function rewindStory(req, res, room, url) {
+    const member = findMember(room, tokenOf(req, url))
+    if (!member) return sendError(res, 403, '需要成员令牌')
+    if (!room.solo) return sendError(res, 409, '回退只用于单人本')
+    if (!room.autoSnapshot) return sendError(res, 409, '还没有可以回退的一步')
+    restoreSnapshot(room, room.autoSnapshot)
+    room.autoSnapshot = null
+    member.lastSeenAt = nowMs()
+    await persist(room)
+    broadcastRestore(room)
+    return sendJson(res, 200, { rewound: true, room: publicRoom(room) })
+  }
+
+  async function getMemory(req, res, room, url) {
+    const member = findMember(room, tokenOf(req, url))
+    if (!member) return sendError(res, 403, '需要成员令牌')
+    if (!room.solo || !room.story) return sendError(res, 409, '记忆只用于单人本')
+    return sendJson(res, 200, { memory: room.story.memory || emptyMemory() })
+  }
+
+  async function patchMemory(req, res, room, url) {
+    const member = findMember(room, tokenOf(req, url))
+    if (!member) return sendError(res, 403, '需要成员令牌')
+    if (!room.solo || !room.story) return sendError(res, 409, '记忆只用于单人本')
+    let body
+    try {
+      body = await readJsonBody(req)
+    } catch (error) {
+      return sendError(res, 400, error instanceof Error ? error.message : 'bad body')
+    }
+    room.story.memory = sanitizeMemory(body.memory ?? body)
+    member.lastSeenAt = nowMs()
+    await persist(room)
+    broadcast(room.id, 'story', { story: publicStory(room) })
+    return sendJson(res, 200, { memory: room.story.memory })
+  }
+
+  /** GM 设置舞台：背景 / 立绘 / BGM / 字幕；AI 也可以用 <scene> 指令改 */
+  async function setScene(req, res, room, url) {
+    const member = findMember(room, tokenOf(req, url))
+    if (!member || member.role !== 'gm') return sendError(res, 403, '只有 GM 能设置舞台')
+    let body
+    try {
+      body = await readJsonBody(req)
+    } catch (error) {
+      return sendError(res, 400, error instanceof Error ? error.message : 'bad body')
+    }
+    const scene = normalizeScene(room, body.scene ?? body)
+    if (!scene) return sendError(res, 400, '舞台数据格式不对')
+    room.scene = scene
+    member.lastSeenAt = nowMs()
+    await persist(room)
+    broadcast(room.id, 'scene', { scene: publicScene(room) })
+    return sendJson(res, 200, { scene })
+  }
+
+  /** 选项投票：GM 发起，所有成员各投一票，平票取第一个；通过后交给 AI 续写 */
+  async function roomChoice(req, res, room, url) {
+    const member = findMember(room, tokenOf(req, url))
+    if (!member) return sendError(res, 403, '需要成员令牌')
+    let body
+    try {
+      body = await readJsonBody(req)
+    } catch (error) {
+      return sendError(res, 400, error instanceof Error ? error.message : 'bad body')
+    }
+    const action = String(body.action ?? '')
+
+    if (action === 'start') {
+      if (member.role !== 'gm') return sendError(res, 403, '只有 GM 能发起选项投票')
+      if (room.choice) return sendError(res, 409, '已有进行中的选项投票')
+      const source = Array.isArray(body.options) ? body.options : room.story?.choices || []
+      const options = source
+        .filter((option) => typeof option === 'string')
+        .map((option) => option.trim().slice(0, 160))
+        .filter(Boolean)
+        .slice(0, 6)
+      if (options.length < 2) return sendError(res, 400, '至少要两个选项')
+      room.choice = {
+        id: newId(),
+        kind: 'story',
+        startedAt: nowMs(),
+        options: options.map((text, index) => ({ id: `o${index + 1}`, text })),
+        votes: {},
+      }
+      member.lastSeenAt = nowMs()
+      await persist(room)
+      broadcast(room.id, 'choice', { choice: publicChoice(room) })
+      return sendJson(res, 200, { choice: publicChoice(room) })
+    }
+
+    if (action === 'cast') {
+      if (!room.choice) return sendError(res, 409, '没有进行中的选项投票')
+      const optionId = String(body.optionId ?? '')
+      const option = room.choice.options.find((item) => item.id === optionId)
+      if (!option) return sendError(res, 400, '选项不存在')
+      room.choice.votes[member.id] = optionId
+      const members = Object.values(room.members)
+      const finished = members.length > 0 && members.every((item) => room.choice.votes[item.id])
+      if (!finished) {
+        member.lastSeenAt = nowMs()
+        await persist(room)
+        broadcast(room.id, 'choice', { choice: publicChoice(room) })
+        return sendJson(res, 200, { choice: publicChoice(room), passed: false })
+      }
+      const counts = {}
+      for (const vote of Object.values(room.choice.votes)) counts[vote] = (counts[vote] || 0) + 1
+      const winner = room.choice.options.reduce((best, item) =>
+        (counts[item.id] || 0) > (counts[best.id] || 0) ? item : best,
+      )
+      room.choice = null
+      appendMessage(room, { kind: 'system', text: `投票结果：${winner.text}`, inAiContext: false })
+      room._choiceDirective = `玩家投票选择了「${winner.text}」。请按这个选择继续写下一段剧情，不要重复投票过程。`
+      broadcast(room.id, 'choice', { choice: null })
+      member.lastSeenAt = nowMs()
+      await persist(room)
+      if (body.narrate !== false) scheduleAi(room, { force: true })
+      return sendJson(res, 200, { choice: null, passed: true, winner: winner.text })
+    }
+
+    if (action === 'cancel') {
+      if (member.role !== 'gm') return sendError(res, 403, '只有 GM 能取消选项投票')
+      room.choice = null
+      await persist(room)
+      broadcast(room.id, 'choice', { choice: null })
+      return sendJson(res, 200, { choice: null })
+    }
+
+    return sendError(res, 400, '未知的选项操作')
   }
 
   async function roomVote(req, res, room, url) {

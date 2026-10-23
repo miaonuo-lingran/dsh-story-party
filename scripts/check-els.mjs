@@ -49,3 +49,5 @@ function check(jsFile, htmlFile, label) {
 check('public/room.js', 'public/room.html', 'room')
 check('public/host.js', 'public/host.html', 'host')
 check('public/make.js', 'public/make.html', 'make')
+check('public/profile.js', 'public/profile.html', 'profile')
+check('public/draw.js', 'public/draw.html', 'draw')

@@ -13,6 +13,22 @@
   const search = new URLSearchParams(location.search)
   const clientVersion = search.get('v') || ''
   const hostSessionId = search.get('sid') || ''
+  const PROFILE_KEY = 'galgame-room:profile'
+
+  function readProfile() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null')
+      if (!parsed || typeof parsed !== 'object') return null
+      return {
+        name: typeof parsed.name === 'string' ? parsed.name.slice(0, 16) : '',
+        avatar: typeof parsed.avatar === 'string' ? parsed.avatar : '',
+      }
+    } catch {
+      return null
+    }
+  }
+
+  const profile = readProfile()
 
   const els = {
     modalButtons: Array.from(document.querySelectorAll('.mode-btn')),
@@ -67,6 +83,14 @@
 
   let currentPort = Number(location.port) || 7302
   let currentPublicUrl = ''
+
+  function applyProfile() {
+    if (!profile) return
+    if (profile.name) {
+      if (!els.gmNameInput.value) els.gmNameInput.value = profile.name
+      if (!els.soloName.value) els.soloName.value = profile.name
+    }
+  }
 
   function toast(text, kind) {
     const node = document.createElement('div')
@@ -199,7 +223,7 @@
 
     if (cards.length > 0) {
       const group = document.createElement('optgroup')
-      group.label = 'cosplay 人设卡'
+      group.label = '人设卡（cosplay / 内置）'
       for (const card of cards) {
         const option = document.createElement('option')
         option.value = 'cos:' + card.id
@@ -621,6 +645,7 @@
     try {
       const selection = els.soloCharacter.value
       const payload = { gmName, solo: true }
+      if (profile && profile.avatar) payload.avatar = profile.avatar
       if (hostSessionId) payload.sessionId = hostSessionId
       if (selection.startsWith('cos:')) {
         payload.cardId = selection.slice(4)
@@ -673,6 +698,7 @@
     try {
       const selection = els.characterSelect.value
       const payload = { title: els.titleInput.value.trim(), gmName }
+      if (profile && profile.avatar) payload.avatar = profile.avatar
       const contextValue = Number(els.contextMessages.value)
       if (Number.isInteger(contextValue)) payload.contextMessages = contextValue
       payload.autoSummary = els.autoSummary.checked
@@ -801,6 +827,7 @@
     if (event.target === els.contextHelpModal) els.contextHelpModal.hidden = true
   })
 
+  applyProfile()
   loadNetwork()
   loadCharacters()
   loadRooms()

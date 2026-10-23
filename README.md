@@ -1,12 +1,12 @@
 # dsh-story-party
 
-> 作者：**B站：喵诺澪染**　·　许可：MIT　·　开源免费，禁止倒卖
+> 作者：**B站：喵诺澪染**　·　代码许可：MIT　·　内置立绘：CC BY-NC-SA 4.0（非商业）　·　开源免费，禁止倒卖
 >
 > 如果你是**付费购买**的，请立即申请退款并举报卖家——本项目从未授权任何人售卖。
 
 联机 Galgame：**房间 API + 房间独立 LLM 会话 + 广播 + 可直接打开的网页房间**。
 阶段 1（服务端）与阶段 2（房间页）已完成；阶段 3（与 galgame 舞台结合）未开始。
-v0.2.0 起支持：**剧本杀（角色本 + 私聊 + 阶段机）、海龟汤私有汤底、主代理自动点名子代理**。
+v0.2.0 起支持：**剧本杀（角色本 + 私聊 + 阶段机）、海龟汤私有汤底、主代理自动点名子代理、舞台场景同步与选项投票、AI 画我猜（单人）**。
 
 ```
 房间服务（本插件自己的端口，默认 7302）
@@ -38,6 +38,32 @@ GM 视角：能看全部角色本、指派角色：
 
 ![汤底](https://raw.githubusercontent.com/miaonuo-lingran/dsh-story-party/main/docs/screenshots/soup-truth.png)
 
+个人本：章节条 + AI 建议选项，输入框仍然可用：
+
+![个人本房间](https://raw.githubusercontent.com/miaonuo-lingran/dsh-story-party/main/docs/screenshots/solo-room.png)
+
+制作页的个人本设置：章节目标、关键选项、结局条件：
+
+![个人本制作](https://raw.githubusercontent.com/miaonuo-lingran/dsh-story-party/main/docs/screenshots/maker-solo.png)
+
+舞台：背景、立绘、字幕；两个浏览器不刷新同步：
+
+![舞台 GM](https://raw.githubusercontent.com/miaonuo-lingran/dsh-story-party/main/docs/screenshots/stage-gm.png)
+
+![舞台玩家](https://raw.githubusercontent.com/miaonuo-lingran/dsh-story-party/main/docs/screenshots/stage-player.png)
+
+内置「鲸鱼娘」：头像和舞台立绘都来自包内非商业素材（CC BY-NC-SA 4.0）：
+
+![内置鲸鱼娘](https://raw.githubusercontent.com/miaonuo-lingran/dsh-story-party/main/docs/screenshots/builtin-maid.png)
+
+个人资料页：统一换头像和昵称：
+
+![个人资料](https://raw.githubusercontent.com/miaonuo-lingran/dsh-story-party/main/docs/screenshots/profile.png)
+
+AI 画我猜（单人）：AI 用几何图形画，你来猜：
+
+![AI 画我猜](https://raw.githubusercontent.com/miaonuo-lingran/dsh-story-party/main/docs/screenshots/draw-guess.png)
+
 ## 安装
 
 **方式一：GitHub（推荐，不用注册 npm）**
@@ -65,7 +91,15 @@ path/to/dsh-story-party
 ## 署名与许可
 
 - 作者：**B站：喵诺澪染**
-- 许可：MIT —— 可以自由使用、修改、分发，但**必须保留本署名**
+- **代码许可：MIT** —— 可以自由使用、修改、分发，但必须保留本署名
+- **内置立绘许可：CC BY-NC-SA 4.0** —— `assets/characters/deepseek/portraits/neutral.webp`
+  是第三方衍生素材，**不是 MIT**；仅限非商业使用，必须保留完整署名链，衍生同许可。
+  详见 `NOTICE` 与 `LICENSE-ARTWORK`。
+- 署名链：**上善**（鲸鱼娘形象）→ **zipzip / ZipZipPipe**（女仆二创）→
+  **Small-tailqwq**（`maid-atelier` 皮肤立绘）→ **@lanxing/dsh-galgame**（本插件直接取用）
+  → 本插件。
+- 内置角色「鲸鱼娘」使用的就是这张立绘；如果不想要非商业素材，可以删除
+  `assets/characters/` 并移除 `src/room-server.js` 里的 `BUILTIN_CARDS`，代码仍可正常使用。
 - 本项目**开源且免费**，从未授权任何人售卖；付费购买请申请退款并举报卖家
 - 署名出现在这些地方：
   - `package.json` 的 `author`、`LICENSE`、README
@@ -77,23 +111,36 @@ path/to/dsh-story-party
 
 ```
 src/room-server.js   房间核心（零 DSH 依赖，standalone 与插件共用同一份）
+src/draw.js          AI 画我猜游戏核心（出题 / 判分 / 兜底题库）
 src/zip.js           零依赖 zip 读取（stored / deflate，带上限与路径校验）
 src/index.js         Host 插件：接 ctx.llm + resolveDshHome + cosplay 角色库
 src/standalone.js    不启动 DSH 的直跑入口（mock 模型，用于 curl 自检）
 public/room.html     房间页（阶段 2）
-public/room.css      房间页样式（开房页 / 房间页 / 制作页共用）
+public/room.css      房间页样式（开房页 / 房间页 / 制作页 / 画我猜共用）
 public/room.js       房间页逻辑（SSE + fetch）
 public/host.html     开房页（创建 / 加入 + 人设卡 + 剧情包）
 public/host.js       开房页逻辑
 public/make.html     剧情包制作页
 public/make.js       制作页逻辑 + 浏览器端零依赖 zip 打包
+public/profile.html  个人资料页（头像 / 昵称）
+public/profile.js    个人资料页逻辑（本机 localStorage）
+public/draw.html     AI 画我猜页面（单人）
+public/draw.js       画我猜页面逻辑（SVG 渲染 + 猜词）
 client/client.js     DSH 浏览器半侧：「联机模式」标签页（iframe 嵌房间页）
 assets/icon.svg      插件图标（插件管理里显示）
+assets/characters/   内置「鲸鱼娘」立绘（CC BY-NC-SA 4.0，非 MIT；见 NOTICE）
+LICENSE              代码 MIT 许可
+LICENSE-ARTWORK      内置立绘的 CC BY-NC-SA 4.0 许可全文
+NOTICE               立绘署名链与使用限制
 scripts/acceptance.ps1   一键验收脚本
 scripts/smoke-events.mjs 无浏览器的页面契约冒烟测试
 scripts/card-test.mjs    cosplay 人设卡集成测试
 scripts/pack-test.mjs    剧情包导入 / 建房 / zip-slip 测试
 scripts/mystery-test.mjs 剧本杀：角色本 / 私聊 / 阶段机 / 真相不泄露
+scripts/solo-test.mjs    个人本：solo 字段 / 主角 / 章节 / 选项剥离
+scripts/save-test.mjs    个人本：存档 / 读档 / 回退 / 长期记忆
+scripts/scene-test.mjs   舞台：素材路由 / scene 同步 / AI <scene> / 选项投票
+scripts/draw-test.mjs    AI 画我猜：出题 / 猜词 / 计分 / 兜底题库
 scripts/soup-test.mjs    海龟汤私有汤底：导入 / GM 接口 / 揭晓提示词
 scripts/check-els.mjs    前端 els 引用检查
 scripts/install-dsh.ps1 装进 profile 的脚本（复制式，备份 package.json）
@@ -158,7 +205,8 @@ node scripts/smoke-events.mjs
 
 ## 接 cosplay 人设卡
 
-开房页的「人设卡」下拉会自动列出 cosplay 插件里的角色库，选中后：
+开房页的「人设卡」下拉会自动列出 cosplay 插件里的角色库，以及一个内置的「鲸鱼娘」。
+选中后：
 
 - AI 在这个房间里扮演这张卡（消息署名、旁白口吻都跟着卡走）
 - 卡的 `description / personality / system_prompt / rules / behavior / mes_example` 进 system prompt
@@ -205,6 +253,20 @@ story-pack.zip
   "mode": "roleplay",
   "scenario": "scenario.md",
   "truth": "汤底 / 完整真相（只有 GM 与 AI 能看到）",
+  "solo": {
+    "mode": "guided",
+    "protagonist": "player",
+    "premise": "你和学妹在旧公寓同居的第三个月。",
+    "chapters": [
+      {
+        "id": "ch1",
+        "title": "雨夜",
+        "goal": "让小柚放下戒心",
+        "choices": ["追问她为什么搬来", "先转移话题"]
+      }
+    ],
+    "endings": [{ "id": "good", "title": "雨停了", "condition": "好感度达到 5，且聊过她的过去" }]
+  },
   "characters": ["characters/1.json"],
   "assets": ["assets/bg.png"]
 }
@@ -217,6 +279,9 @@ story-pack.zip
 - `playerBrief`：玩家须知，领取角色后可见
 - `playedBy`：`ai` / `human` / `either`；剧本杀里人类角色由玩家领取，AI 角色进子代理名册
 - `likes` / `favoritePlaces` / `relations`：喜爱、常去地点、人物关系
+- `solo`：个人本设置，全部字段可选；`mode` 是 `free` / `guided` / `scripted`，
+  `protagonist` 写人物 id（建议该人物标 `playedBy: human` 或 `either`），
+  `chapters[].choices` 是作者写的关键选项（软建议，不锁自由输入）
 
 建房时：包里的 `scenario` 当世界观，选中人物的卡当人设，`first_mes` 当开场白。
 `truth` 只存在房主主机的房间 JSON 与系统提示词里；列表 / 详情 / 房间公开接口只返回 `hasTruth`。
@@ -226,6 +291,13 @@ story-pack.zip
 浏览器打开 `http://<本机>:7302/make`：填包名、世界观、人物卡，可选几张背景图，
 然后「下载 .zip」或「装进本机」。打包在浏览器端完成（stored zip、零依赖）；
 装进本机后回开房页，在「角色」下拉里就能选。
+
+制作页会按包类型只显示需要的字段：
+
+- 角色扮演 / 其他：显示「世界观 / 大纲」，不显示汤底
+- 海龟汤：显示「汤面 / 谜面」+「汤底（仅 GM 与 AI 可见）」
+- 剧本杀：显示「世界观 / 大纲」+「真相（仅 GM 与 AI 可见）」
+- 个人本设置是独立开关，勾选「这个包支持单人游玩」后才展开章节 / 结局
 
 ### 导入
 
@@ -251,6 +323,143 @@ story-pack.zip
 - 开场说明：制作页可选填一段固定文案，建房后作为**第一条消息**，人物开场白和剧情排在它后面
 - 人物关系图：`/make` 里的可视化编辑——拖动人物摆位置，从人物右侧「+」拉线到另一个人物，在弹出框里写关系（可勾「双向」）；打包时按出边 / 双向边写进人物卡 `relations`，房间的【人物关系】段落会喂给模型
 
+## 个人本（单人游玩）
+
+开房页的「自我游玩」就是个人本入口：单人房间，只有你和 AI，不生成邀请链接，别人进不来。
+
+- 如果剧情包写了 `solo.protagonist`，该角色由你扮演，AI 当旁白并扮演其他角色；
+  没写就是第一人称「你」
+- AI 每轮可以给 2–4 个建议选项，用 `<choices>...</choices>` 包起来；服务端会把标记从正文剥掉，
+  存进 `room.story.choices`，房间页渲染成选项 chips
+- **选项是软建议**：输入框一直可用，玩家可以不选、自己写动作
+- 作者写的章节目标、关键选项、结局条件会进系统提示词，作为软引导；
+  `mode` 为 `free` / `guided` / `scripted` 时引导强度不同
+- 制作页「个人本设置」可以启用单人模式、选主角、写前提、添加章节（标题/目标/关键选项）和结局
+- 房间公开信息里带 `story`：章节进度、当前选项、主角；SSE 增加 `story` 事件
+
+当前进度：**选项、章节、主角、结局提示、自动/手动存档、回退一步、长期记忆已经通了**；
+独立的 `/play` 视觉小说页、结局收集、多存档导出还在后续版本。
+
+存档面板（自动存档每回合更新，手动最多 5 个）：
+
+![个人本存档](https://raw.githubusercontent.com/miaonuo-lingran/dsh-story-party/main/docs/screenshots/solo-saves.png)
+
+长期记忆（AI 提议更新，也可以手动改）：
+
+![个人本记忆](https://raw.githubusercontent.com/miaonuo-lingran/dsh-story-party/main/docs/screenshots/solo-memory.png)
+
+## 个人本存档 / 回滚 / 长期记忆
+
+- **自动存档**：每轮 AI 开口前留一份快照，包含消息、`story`、舞台和摘要；
+  「回退一步」就是回到 AI 开口之前
+- **手动存档**：最多 5 个，带名字 / 回合 / 章节 / 消息数 / 时间；读档整份恢复
+- **删除存档**：手动存档可删；自动存档只保留最新一份
+- **长期记忆**：`room.story.memory` 分四类——事实、人物关系、好感、物品。
+  AI 在回复末尾可以输出：
+
+```text
+<memory>{"facts":["小柚住在隔壁"],"relations":{"小柚":"开始信任你"},"affection":{"小柚":1},"items":["旧钥匙"]}</memory>
+```
+
+服务端会剥掉标记、合并进记忆（事实/物品去重，好感限制在 -100..100），再从系统提示词喂给下一轮。
+也可以在房间右上角「记忆」里手动编辑。
+
+相关接口：
+
+| 方法 | 路径 | 鉴权 | 说明 |
+|---|---|---|---|
+| GET / POST | `/api/rooms/:id/saves` | 成员 | 存档列表 / 新建手动存档（`{name}`） |
+| POST | `/api/rooms/:id/saves/:saveId/load` | 成员 | 读档（`saveId=auto` 读自动存档） |
+| DELETE | `/api/rooms/:id/saves/:saveId` | 成员 | 删除手动存档 |
+| POST | `/api/rooms/:id/rewind` | 成员 | 回退一步（回到自动存档） |
+| GET / PATCH | `/api/rooms/:id/memory` | 成员 | 读取 / 覆盖长期记忆 |
+
+SSE 增加 `restore`（读档/回退后整份重渲染）与 `saves` 事件。
+
+
+## 舞台与选项投票
+
+房间页顶部可以显示一块 **galgame 舞台**：
+
+- `scene.background`：背景图，只能来自剧情包 `assets/`
+- `scene.sprites`：立绘列表，`{ characterId, pos: left|center|right, emotion }`
+- `scene.bgm`：BGM，只能来自剧情包 `assets/` 里的音频
+- `scene.caption`：舞台字幕
+
+两种改法：
+
+1. GM 侧栏「设置舞台」：选背景 / BGM、加立绘、写字幕，保存后 SSE 广播 `scene`，
+   所有客户端不刷新就跟过去
+2. AI 在回复里输出：
+
+```text
+<scene>{"background":"assets/bg.png","sprites":[{"characterId":"yuzu","pos":"left","emotion":"smile"}],"bgm":"assets/rain.mp3","caption":"雨夜。"}</scene>
+```
+
+服务端会剥掉标记、校验素材与角色，再广播给所有人。素材路由：
+
+```text
+GET /pack-assets/<packId>/<filename>
+```
+
+只提供 png/jpeg/webp/gif 与 mp3/ogg/wav/m4a/aac，拒绝 `../`、绝对路径和 svg。
+
+选项投票：
+
+- GM 点「发起选项投票」，每行一个选项（2–6 个），所有人各投一票
+- 所有人投完后按票数继续，平票取第一个
+- 结果会发一条系统消息，并把「玩家选择了 X」写进 AI 下一轮提示词
+- 舞台和选项都走 SSE，两个浏览器不需要刷新
+
+相关接口：
+
+| 方法 | 路径 | 鉴权 | 说明 |
+|---|---|---|---|
+| GET / POST | `/api/rooms/:id/scene` | 邀请或成员 / GM | 读取 / 设置舞台 |
+| POST | `/api/rooms/:id/choice` | 成员 / GM | 选项投票：`start` / `cast` / `cancel` |
+| GET | `/pack-assets/:packId/:file` | 无 | 剧情包素材（图片 / 音频） |
+
+BGM 受浏览器自动播放限制，第一次需要玩家点一下「BGM 播放」。
+
+## AI 画我猜（单人）
+
+开房页的「🎨 AI 画我猜（单人）」或直接打开 `/draw`：
+
+- AI 想一个常见中文词，用最多 24 个几何图形画出来，再给一句不直接说出答案的提示
+- 玩家看图猜词；猜错可以继续，猜对按尝试次数得分
+- 五题一局；有「提示字数 / 跳过 / 下一题 / 重新开始」
+- 每轮只调用一次模型；模型返回坏 JSON 时自动用内置题库兜底，游戏不会卡死
+
+图形协议（只允许这些，避免文字泄题和 SVG 注入）：
+
+```json
+{
+  "answer": "雨伞",
+  "aliases": ["伞"],
+  "hint": "下雨天会用到",
+  "shapes": [
+    { "type": "polygon", "points": [[50,12],[16,46],[84,46]], "fill": "#e05a5a" },
+    { "type": "line", "x1": 50, "y1": 46, "x2": 50, "y2": 88, "stroke": "#6b4f2a", "strokeWidth": 3 }
+  ]
+}
+```
+
+允许 `circle / ellipse / rect / line / polyline / polygon`，坐标 0–100；`text / image / path`
+一律丢弃。答案只在猜对或跳过后才下发。
+
+相关接口：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/draw/sessions` | 新建一局（`{rounds}`，默认 5） |
+| GET | `/api/draw/sessions/:id` | 当前状态（不含未揭晓答案） |
+| POST | `/api/draw/sessions/:id/next` | 下一题 |
+| POST | `/api/draw/sessions/:id/guess` | 猜词（`{text}`） |
+| POST | `/api/draw/sessions/:id/skip` | 跳过并揭晓 |
+| POST | `/api/draw/sessions/:id/hint` | 提示字数 / 首字 |
+
+会话存在内存里，重启房间服务会清空；它是单人小游戏，不做跨设备同步。
+
 ## 房间密码（可选）
 
 建房时可以设一个密码，进房的人必须输对才能进：
@@ -259,6 +468,18 @@ story-pack.zip
 - 公开信息只暴露 `hasPassword`，不返回任何哈希
 - 密码**不进邀请链接**，单独告诉朋友即可
 - GM 可以随时改或清空：`PATCH /api/rooms/:id  {"password":"新密码"}`，传空串 = 取消密码
+
+## 个人资料（头像 / 昵称）
+
+开房页顶部「个人资料」进入 `/profile`：
+
+- 上传头像（自动缩成 128×128 JPEG）、填写昵称，实时预览
+- 资料只存在**这台浏览器**的 localStorage，不会上传到房主机器
+- 创建房间 / 自我游玩会预填昵称，并把头像带到 GM 身份
+- 从邀请链接加入时，昵称预填、头像随 `join` 一起提交；房主那边能看到
+- 房间右上角仍然可以单独换「这一局」的头像，个人资料只是默认值
+
+注意：换浏览器 / 清站点数据 = 个人资料丢失；它不是账号，也不做跨设备同步。
 
 ## 头像与玩家身份
 
@@ -438,11 +659,25 @@ AI 的上下文会从最近 `contextMessages` 条消息重建。
 | POST | `/api/rooms/:id/roles` | 成员/GM | `claim` / `assign` / `release` |
 | POST | `/api/rooms/:id/phase` | GM | 剧本杀阶段机：`next` / `set` |
 | GET | `/api/rooms/:id/truth` | GM | 汤底 / 真相正文 |
+| GET / POST | `/api/rooms/:id/scene` | 邀请或成员 / GM | 读取 / 设置舞台（背景、立绘、BGM、字幕） |
+| POST | `/api/rooms/:id/choice` | 成员 / GM | 选项投票：`start` / `cast` / `cancel` |
+| GET / POST | `/api/rooms/:id/saves` | 成员 | 个人本存档列表 / 新建存档 |
+| POST | `/api/rooms/:id/saves/:saveId/load` | 成员 | 个人本读档 |
+| DELETE | `/api/rooms/:id/saves/:saveId` | 成员 | 删除手动存档 |
+| POST | `/api/rooms/:id/rewind` | 成员 | 个人本回退一步 |
+| GET / PATCH | `/api/rooms/:id/memory` | 成员 | 个人本长期记忆 |
+| POST | `/api/draw/sessions` | 无 | 新建一局 AI 画我猜 |
+| GET | `/api/draw/sessions/:id` | 无 | 画我猜当前状态（不含未揭晓答案） |
+| POST | `/api/draw/sessions/:id/next` | 无 | 下一题 |
+| POST | `/api/draw/sessions/:id/guess` | 无 | 猜词 |
+| POST | `/api/draw/sessions/:id/skip` | 无 | 跳过并揭晓 |
+| POST | `/api/draw/sessions/:id/hint` | 无 | 提示字数 / 首字 |
+| GET | `/pack-assets/:packId/:file` | 无 | 剧情包图片 / 音频素材 |
 | POST | `/api/rooms/:id/avatar` | 成员 | 上传自己的头像（内联图片 data URL） |
 | POST | `/api/rooms/:id/vote` | 成员/GM | 投票：`start` / `cast` / `cancel`（全员同意才通过） |
 | POST | `/api/rooms/:id/purge` | GM 或本机 | 永久删除房间（关闭只是打标记） |
 | POST | `/api/rooms/:id/leave` | 成员 | 主动离开 |
-| GET | `/api/rooms/:id/events?since=0` | 邀请或成员 | SSE：snapshot / message / members / ai / system / vote / room / phase / roles |
+| GET | `/api/rooms/:id/events?since=0` | 邀请或成员 | SSE：snapshot / message / members / ai / system / vote / room / phase / roles / story / scene / choice / restore / saves |
 
 ### 最小 curl 流程
 
@@ -517,7 +752,7 @@ $env:npm_config_cache = 'dsh-story-party\.npm-cache'   # 可选：避免写系�
 npm pack --pack-destination .
 ```
 
-产物：`.\dsh-story-party-0.2.0.tgz`，共 41 个文件
+产物：`.\dsh-story-party-0.2.0.tgz`，共 54 个文件
 （`src/`、`public/`、`assets/`、`scripts/`、`cordis.patch.yml`、`README.md`、`package.json`）。
 
 包内已声明：
@@ -572,11 +807,15 @@ $env:PACK_TEST_PORT=7342;      node scripts/pack-test.mjs
 $env:VERSION_TEST_PORT=7343;   node scripts/version-test.mjs
 $env:PASSWORD_TEST_PORT=7344;  node scripts/password-test.mjs
 $env:AVATAR_TEST_PORT=7345;    node scripts/avatar-test.mjs
-$env:VOTE_TEST_PORT=7347;      node scripts/vote-test.mjs
+$env:VOTE_TEST_PORT=7390;      node scripts/vote-test.mjs
 $env:AGENTS_TEST_PORT=7348;    node scripts/agents-test.mjs
 $env:CONTEXT_TEST_PORT=7349;   node scripts/context-test.mjs
 $env:SUMMARY_TEST_PORT=7350;   node scripts/summary-test.mjs
 $env:REASONING_TEST_PORT=7351; node scripts/reasoning-test.mjs
+$env:SOLO_TEST_PORT=7378;      node scripts/solo-test.mjs
+$env:SAVE_TEST_PORT=7386;      node scripts/save-test.mjs
+$env:SCENE_TEST_PORT=7382;     node scripts/scene-test.mjs
+$env:DRAW_TEST_PORT=7396;      node scripts/draw-test.mjs
 $env:MYSTERY_TEST_PORT=7372;   node scripts/mystery-test.mjs
 $env:SOUP_TEST_PORT=7374;      node scripts/soup-test.mjs
 $env:HOSTSIM_PORT=7360;        node scripts/host-sim.mjs
@@ -610,7 +849,13 @@ $env:GALGAME_ROOM_BASE='http://127.0.0.1:7302'; node scripts/live-check.mjs
 - 私聊的 UI 只在剧本杀模式出现；服务端本身支持任意房间发 `to`，但其他模式默认不显示目标下拉框；
 - 角色本、汤底 / 真相在房主主机的房间 JSON 里是明文（只存在本机），不是端到端加密；
 - 剧本杀阶段机目前是 GM 手动推进，没有计时器、自动搜证或玩家投票锁；
-- 插件市场提交尚未完成（npm 包与 GitHub 仓库已就绪）。
+- 个人本目前是「单人房 + 选项 chips + 存档/记忆」，独立的视觉小说页、结局收集、多存档导出尚未实现；
+- 舞台目前是房间页顶部的一块区域，不是独立视觉小说页；立绘没有入场/切换动画，也没有语音；
+- BGM 受浏览器自动播放限制，需要玩家第一次手动点播放；
+- 选项投票是所有成员（含观众）各一票，暂不支持按职位加权或 GM 一票否决；
+- AI 画我猜的图是几何图形，不是 AI 生图；每轮一次模型调用，坏 JSON 走内置题库兜底；
+  游戏会话存在内存里，重启房间服务会清空；
+- 插件市场**尚未提交**：市场条目需要你确认后再走 issue 流程；npm 上仍是 0.1.48，0.2.0 需要更新发布 token 后再发。
 
 ## 阶段 3 预留
 

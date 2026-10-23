@@ -1,5 +1,5 @@
 /**
- * dsh-galgame-room —— 浏览器半侧（阶段 2.5）。
+ * dsh-story-party —— 浏览器半侧（阶段 2.5）。
  *
  * 在会话视图最右边加一个「联机模式」标签（chat=0、轨迹=10、galgame=20、本插件=30），
  * 内容直接嵌房间服务托管的网页（默认 http://127.0.0.1:7302/）：
@@ -9,10 +9,21 @@
  *
  * 写法对齐 @lanxing/dsh-galgame：DSH 的 client 模块由 window.__ModuleLoader__ 加载，
  * 通过 factory 注入的 require 拿到 shell 提供的 react，不参与 npm 打包。
+ *
+ * 注意：__ModuleLoader__.load 的 id 必须等于 package.json 的 name（dsh-story-party），
+ * DSH 的 client-modules 按「包名」把注册的 factory 对到 graph row；改成
+ * dsh-story-party 后仍沿用旧的 dsh-galgame-room，就会报
+ * "loaded without registering dsh-story-party" 导致启动失败。
+ *
+ * 另外 DSH 的 client-modules 会在同一份 bundle 被重复执行（HMR / 重启未 invalidate）时，
+ * 对同一个 id 抛 "duplicate factory registration"，直接打断整个 web boot。
+ * 这里用 try/catch 做幂等保护：正常启动只注册一次；重复执行时吞掉 duplicate，
+ * 保留已经注册好的 factory，不再触发致命启动错误。
  */
-window.__ModuleLoader__.load({
-  id: 'dsh-galgame-room',
-  factory: (require) => {
+try {
+  window.__ModuleLoader__.load({
+    id: 'dsh-story-party',
+    factory: (require) => {
     var module = { exports: {} }
     var exports = module.exports
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
@@ -196,3 +207,6 @@ window.__ModuleLoader__.load({
     return module.exports
   },
 })
+} catch (error) {
+  if (!/duplicate factory registration/i.test(String((error && error.message) || error))) throw error
+}

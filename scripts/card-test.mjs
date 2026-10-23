@@ -62,12 +62,34 @@ async function api(path, options = {}) {
 try {
   await server.start()
 
-  // 1. 角色库
+  // 1. 角色库：内置鲸鱼娘 + 注入的小柚
   const list = await api('/api/cards')
-  assert.equal(list.cards.length, 1)
-  assert.equal(list.cards[0].name, '小柚')
-  assert.equal(list.cards[0].emoji, '🍊')
-  console.log('[/api/cards] 读出 1 张卡 OK')
+  assert.equal(list.cards.length, 2)
+  const injected = list.cards.find((item) => item.id === 'c1')
+  assert.equal(injected.name, '小柚')
+  assert.equal(injected.emoji, '🍊')
+  const builtin = list.cards.find((item) => item.id === 'builtin-deepseek')
+  assert.equal(builtin.name, '鲸鱼娘')
+  assert.equal(builtin.avatar, '/plugin-assets/characters/deepseek/portraits/neutral.webp')
+  const portrait = await fetch(
+    `http://127.0.0.1:${port}/plugin-assets/characters/deepseek/portraits/neutral.webp`,
+  )
+  assert.equal(portrait.status, 200)
+  assert.equal(portrait.headers.get('content-type'), 'image/webp')
+  assert.ok((await portrait.arrayBuffer()).byteLength > 1000)
+  console.log('[/api/cards] 内置鲸鱼娘 + cosplay 卡 OK，内置立绘路由 OK')
+
+  // 1b. 内置角色也能直接建房
+  const builtinRoom = await api('/api/rooms', {
+    method: 'POST',
+    body: { cardId: 'builtin-deepseek', gmName: '澪' },
+  })
+  assert.equal(builtinRoom.room.persona.name, '鲸鱼娘')
+  assert.equal(
+    builtinRoom.room.persona.avatar,
+    '/plugin-assets/characters/deepseek/portraits/neutral.webp',
+  )
+  console.log('内置鲸鱼娘建房 OK')
 
   // 2. 建房带 cardId → 人设 / 标题 / 场景 / 开场白
   const created = await api('/api/rooms', { method: 'POST', body: { cardId: 'c1', gmName: '澪' } })

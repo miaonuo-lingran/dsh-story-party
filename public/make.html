@@ -70,14 +70,14 @@
         </div>
       </section>
 
-      <section class="maker-section">
-        <h2>世界观 / 大纲</h2>
+      <section class="maker-section" id="scenario-section">
+        <h2 id="scenario-heading">世界观 / 大纲</h2>
         <textarea id="scenario" rows="8" placeholder="故事发生在哪里、你们是什么关系、现在是什么状态……"></textarea>
       </section>
 
-      <section class="maker-section">
-        <h2>汤底 / 真相（仅 GM 与 AI 可见）</h2>
-        <p class="muted small">海龟汤填汤底；剧本杀可以填完整真相。它只存在房主主机与系统提示词里，不会发给玩家。</p>
+      <section class="maker-section" id="truth-section" hidden>
+        <h2 id="truth-heading">汤底 / 真相（仅 GM 与 AI 可见）</h2>
+        <p id="truth-hint" class="muted small">海龟汤填汤底；剧本杀可以填完整真相。它只存在房主主机与系统提示词里，不会发给玩家。</p>
         <textarea id="pack-truth" rows="4" placeholder="例如：女孩其实已经死了，敲门的是她自己的回声。"></textarea>
       </section>
 
@@ -111,6 +111,51 @@
           <span class="muted small">拖动人物摆位置，从右侧「+」拉一条线到另一个人物</span>
         </div>
         <div id="relation-graph" class="relation-graph"></div>
+      </section>
+
+      <section class="maker-section">
+        <div class="card-head">
+          <h2>个人本设置（可选）</h2>
+          <label class="check-row">
+            <input type="checkbox" id="solo-enabled">
+            <span>这个包支持单人游玩</span>
+          </label>
+        </div>
+        <div id="solo-fields" hidden>
+          <div class="grid-2">
+            <label class="field">
+              <span>作者参与度</span>
+              <select id="solo-mode">
+                <option value="free">自由（只写大纲，AI 补全部）</option>
+                <option value="guided">引导（章节目标 + AI 补对白）</option>
+                <option value="scripted">剧本（关键选项也由作者写）</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>主角</span>
+              <select id="solo-protagonist">
+                <option value="">第一人称「你」</option>
+              </select>
+            </label>
+            <label class="field span-2">
+              <span>个人本前提 / 开场（可选）</span>
+              <textarea id="solo-premise" rows="3" placeholder="你和学妹在旧公寓同居的第三个月……"></textarea>
+            </label>
+          </div>
+
+          <div class="card-head solo-head">
+            <h3>章节</h3>
+            <button id="add-solo-chapter" class="ghost" type="button">+ 添加章节</button>
+          </div>
+          <div id="solo-chapters" class="solo-list"></div>
+
+          <div class="card-head solo-head">
+            <h3>结局</h3>
+            <button id="add-solo-ending" class="ghost" type="button">+ 添加结局</button>
+          </div>
+          <div id="solo-endings" class="solo-list"></div>
+          <p class="muted small">章节目标、关键选项都是软引导：玩家始终可以自由输入，选项只是推荐动作。</p>
+        </div>
       </section>
 
       <section class="maker-section">

@@ -20,6 +20,20 @@
   const params = new URLSearchParams(location.search)
   const inviteFromUrl = params.get('t') || ''
   const clientVersion = params.get('v') || ''
+  const PROFILE_KEY = 'galgame-room:profile'
+
+  function readProfile() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null')
+      if (!parsed || typeof parsed !== 'object') return null
+      return {
+        name: typeof parsed.name === 'string' ? parsed.name.slice(0, 16) : '',
+        avatar: typeof parsed.avatar === 'string' ? parsed.avatar : '',
+      }
+    } catch {
+      return null
+    }
+  }
 
   const KEY_INVITE = `galgame-room:invite:${roomId}`
   const KEY_MEMBER = `galgame-room:member:${roomId}`
@@ -38,6 +52,9 @@
     hydrated: false,
     history: [],
     es: null,
+    stageHidden: false,
+    sceneDraft: [],
+    profile: readProfile(),
   }
 
   function loadCache() {
@@ -107,6 +124,51 @@
     voteDisagree: $('vote-disagree'),
     voteCancel: $('vote-cancel'),
     startVote: $('start-vote'),
+    storyBar: $('story-bar'),
+    storyMeta: $('story-meta'),
+    storyChoices: $('story-choices'),
+    storyContinue: $('story-continue'),
+    stage: $('stage'),
+    stageBg: $('stage-bg'),
+    stageSprites: $('stage-sprites'),
+    stageCaption: $('stage-caption'),
+    stageAudio: $('stage-audio'),
+    stageBgmToggle: $('stage-bgm-toggle'),
+    stageCollapse: $('stage-collapse'),
+    stageBtn: $('stage-btn'),
+    sceneModal: $('scene-modal'),
+    sceneBackground: $('scene-background'),
+    sceneBgm: $('scene-bgm'),
+    sceneCaption: $('scene-caption'),
+    sceneSpriteList: $('scene-sprite-list'),
+    sceneAddSprite: $('scene-add-sprite'),
+    sceneSave: $('scene-save'),
+    sceneClose: $('scene-close'),
+    sceneEdit: $('scene-edit'),
+    choiceBar: $('choice-bar'),
+    choiceTitle: $('choice-title'),
+    choiceOptionsList: $('choice-options-list'),
+    choiceCancel: $('choice-cancel'),
+    choiceStart: $('choice-start'),
+    choiceModal: $('choice-modal'),
+    choiceOptionsInput: $('choice-options-input'),
+    choiceStartSubmit: $('choice-start-submit'),
+    choiceClose: $('choice-close'),
+    savesBtn: $('saves-btn'),
+    memoryBtn: $('memory-btn'),
+    savesModal: $('saves-modal'),
+    savesList: $('saves-list'),
+    saveName: $('save-name'),
+    saveNew: $('save-new'),
+    rewindBtn: $('rewind-btn'),
+    savesClose: $('saves-close'),
+    memoryModal: $('memory-modal'),
+    memoryFacts: $('memory-facts'),
+    memoryRelations: $('memory-relations'),
+    memoryAffection: $('memory-affection'),
+    memoryItems: $('memory-items'),
+    memorySave: $('memory-save'),
+    memoryClose: $('memory-close'),
     truthBtn: $('truth-btn'),
     truthModal: $('truth-modal'),
     truthText: $('truth-text'),
@@ -121,6 +183,7 @@
     speakAgent: $('speak-agent'),
 
     membersPanel: $('members-panel'),
+    membersHead: $('members-head'),
     memberList: $('member-list'),
     memberCount: $('member-count'),
     gmBar: $('gm-bar'),
@@ -209,7 +272,10 @@
   function renderAvatar(node, options) {
     const { avatar, name = '', emoji = '' } = options || {}
     node.textContent = ''
-    if (typeof avatar === 'string' && avatar.startsWith('data:image/')) {
+    if (
+      typeof avatar === 'string' &&
+      (avatar.startsWith('data:image/') || avatar.startsWith('/') || /^https?:\/\//i.test(avatar))
+    ) {
       const image = document.createElement('img')
       image.src = avatar
       image.alt = ''
@@ -419,6 +485,9 @@
       : '输入昵称，进入这场故事。'
     els.inviteRow.hidden = Boolean(state.invite)
     els.joinPasswordRow.hidden = !(state.room && state.room.hasPassword)
+    if (!els.joinName.value && state.profile && state.profile.name) {
+      els.joinName.value = state.profile.name
+    }
     setJoinError(message || '')
     if (!state.invite) els.joinInvite.focus()
     else els.joinName.focus()
@@ -451,6 +520,7 @@
           ...(clientVersion ? { clientVersion } : {}),
           ...(els.joinPassword.value.trim() ? { password: els.joinPassword.value.trim() } : {}),
           ...(machineCode ? { machineCode } : {}),
+          ...(state.profile && state.profile.avatar ? { avatar: state.profile.avatar } : {}),
         },
       })
       state.invite = invite
@@ -527,12 +597,23 @@
     const solo = Boolean(state.room.solo)
     els.copyInvite.hidden = !state.invite || solo
     els.toggleMembers.hidden = solo
-    els.membersPanel.hidden = solo
+    // 单人本不显示参与者，但 GM 控制条要保留
+    els.membersPanel.hidden = false
+    els.membersHead.hidden = solo
+    els.memberList.hidden = solo
+    els.membersPanel.classList.toggle('solo', solo)
     const soup = Boolean(state.room.pack && state.room.pack.mode === 'soup')
     els.startVote.hidden = !(isGm() && soup)
     els.truthBtn.hidden = !(isGm() && state.room.hasTruth)
     els.rolesBtn.hidden = !(Array.isArray(state.room.cast) && state.room.cast.length > 0)
     renderPhase()
+    renderStory()
+    renderStage()
+    renderChoice()
+    els.sceneEdit.hidden = !isGm()
+    els.choiceStart.hidden = !isGm()
+    els.savesBtn.hidden = !state.room.solo
+    els.memoryBtn.hidden = !state.room.solo
     renderComposerTarget()
     renderAgents()
     renderVote()
@@ -570,6 +651,362 @@
     els.phaseText.textContent = `阶段 ${phase.index + 1}/${phase.total} · ${phase.label}`
     els.phaseNext.hidden = !isGm()
     els.phaseNext.disabled = phase.index >= phase.total - 1
+  }
+
+  function renderStory() {
+    const story = state.room && state.room.story
+    if (!story) {
+      els.storyBar.hidden = true
+      return
+    }
+    els.storyBar.hidden = false
+    const chapter = story.chapter
+    els.storyMeta.textContent = chapter
+      ? `第 ${story.chapterIndex + 1}/${story.chapterCount} 章 · ${chapter.title || '未命名章节'}`
+      : `个人本 · 第 ${story.turn || 0} 回合`
+    els.storyChoices.textContent = ''
+    for (const choice of story.choices || []) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'mini story-choice'
+      button.textContent = choice
+      button.addEventListener('click', () => void sendText(choice))
+      els.storyChoices.append(button)
+    }
+    els.storyContinue.hidden = false
+    els.storyContinue.disabled = Boolean(state.thinking)
+  }
+
+  // ---------- 舞台 ----------
+
+  function packAssetUrl(path) {
+    const text = String(path || '')
+    if (text.startsWith('data:')) return text
+    const pack = state.room && state.room.pack
+    if (!pack || !pack.id || !text.startsWith('assets/')) return ''
+    return `/pack-assets/${encodeURIComponent(pack.id)}/${encodeURIComponent(text.slice(7))}`
+  }
+
+  function renderStage() {
+    const scene = state.room && state.room.scene
+    els.stageBtn.hidden = !scene
+    if (!scene || state.stageHidden) {
+      els.stage.hidden = true
+      return
+    }
+    els.stage.hidden = false
+    const background = packAssetUrl(scene.background)
+    els.stageBg.style.backgroundImage = background
+      ? `url("${background.replace(/"/g, '%22')}")`
+      : 'linear-gradient(135deg, rgba(143,211,255,.12), rgba(242,184,128,.08))'
+    els.stageSprites.textContent = ''
+    for (const sprite of scene.sprites || []) {
+      const node = document.createElement('div')
+      node.className = `stage-sprite pos-${sprite.pos || 'center'}`
+      if (sprite.avatar) {
+        const image = document.createElement('img')
+        image.src = sprite.avatar
+        image.alt = ''
+        node.append(image)
+      } else {
+        const emoji = document.createElement('span')
+        emoji.className = 'stage-sprite-emoji'
+        emoji.textContent = sprite.emoji || '🎭'
+        node.append(emoji)
+      }
+      const label = document.createElement('span')
+      label.className = 'stage-sprite-label'
+      label.textContent = sprite.name + (sprite.emotion ? ` · ${sprite.emotion}` : '')
+      node.append(label)
+      els.stageSprites.append(node)
+    }
+    els.stageCaption.textContent = scene.caption || ''
+    els.stageCaption.hidden = !scene.caption
+    if (scene.bgm) {
+      const url = packAssetUrl(scene.bgm)
+      if (url) {
+        if (els.stageAudio.getAttribute('src') !== url) {
+          els.stageAudio.pause()
+          els.stageAudio.src = url
+        }
+        els.stageBgmToggle.hidden = false
+        els.stageBgmToggle.textContent = els.stageAudio.paused ? 'BGM 播放' : 'BGM 暂停'
+      } else {
+        els.stageBgmToggle.hidden = true
+      }
+    } else {
+      els.stageAudio.pause()
+      els.stageAudio.removeAttribute('src')
+      els.stageBgmToggle.hidden = true
+    }
+  }
+
+  function toggleStage() {
+    state.stageHidden = !state.stageHidden
+    renderStage()
+  }
+
+  function toggleStageBgm() {
+    if (!els.stageAudio.getAttribute('src')) return
+    if (els.stageAudio.paused) {
+      els.stageAudio
+        .play()
+        .then(() => {
+          els.stageBgmToggle.textContent = 'BGM 暂停'
+        })
+        .catch(() => toast('浏览器拦截了自动播放，点一下再试'))
+    } else {
+      els.stageAudio.pause()
+      els.stageBgmToggle.textContent = 'BGM 播放'
+    }
+  }
+
+  function sceneCharacters() {
+    const room = state.room
+    if (!room) return []
+    if (Array.isArray(room.cast) && room.cast.length > 0) {
+      return room.cast.map((character) => ({
+        id: character.id,
+        name: character.name,
+        emoji: character.emoji,
+        avatar: character.avatar,
+      }))
+    }
+    if (room.persona) {
+      return [
+        {
+          id: room.persona.id || 'persona',
+          name: room.persona.name,
+          emoji: room.persona.emoji,
+          avatar: room.persona.avatar,
+        },
+      ]
+    }
+    return []
+  }
+
+  function fillAssetSelect(select, assets, pattern, value) {
+    select.textContent = ''
+    const none = document.createElement('option')
+    none.value = ''
+    none.textContent = '无'
+    select.append(none)
+    for (const asset of assets || []) {
+      const path = asset && asset.path
+      if (typeof path !== 'string' || !pattern.test(path)) continue
+      const option = document.createElement('option')
+      option.value = path
+      option.textContent = path.replace(/^assets\//, '')
+      select.append(option)
+    }
+    select.value = value && Array.from(select.options).some((option) => option.value === value) ? value : ''
+  }
+
+  function renderSceneSpriteRows() {
+    els.sceneSpriteList.textContent = ''
+    const characters = sceneCharacters()
+    for (const [index, sprite] of state.sceneDraft.entries()) {
+      const row = document.createElement('div')
+      row.className = 'scene-sprite-row'
+
+      const character = document.createElement('select')
+      character.className = 'mini'
+      const empty = document.createElement('option')
+      empty.value = ''
+      empty.textContent = '选择角色'
+      character.append(empty)
+      for (const item of characters) {
+        const option = document.createElement('option')
+        option.value = item.id
+        option.textContent = item.name
+        character.append(option)
+      }
+      character.value = sprite.characterId || ''
+      character.addEventListener('change', () => {
+        sprite.characterId = character.value
+      })
+
+      const pos = document.createElement('select')
+      pos.className = 'mini'
+      for (const [value, label] of [
+        ['left', '左'],
+        ['center', '中'],
+        ['right', '右'],
+      ]) {
+        const option = document.createElement('option')
+        option.value = value
+        option.textContent = label
+        pos.append(option)
+      }
+      pos.value = sprite.pos || 'center'
+      pos.addEventListener('change', () => {
+        sprite.pos = pos.value
+      })
+
+      const emotion = document.createElement('input')
+      emotion.maxLength = 20
+      emotion.placeholder = '表情'
+      emotion.value = sprite.emotion || ''
+      emotion.addEventListener('input', () => {
+        sprite.emotion = emotion.value
+      })
+
+      const remove = document.createElement('button')
+      remove.type = 'button'
+      remove.className = 'mini danger-mini'
+      remove.textContent = '删除'
+      remove.addEventListener('click', () => {
+        state.sceneDraft.splice(index, 1)
+        renderSceneSpriteRows()
+      })
+
+      row.append(character, pos, emotion, remove)
+      els.sceneSpriteList.append(row)
+    }
+  }
+
+  function openSceneEditor() {
+    if (!isGm()) return
+    const scene = (state.room && state.room.scene) || {}
+    const assets = (state.room && state.room.pack && state.room.pack.assets) || []
+    fillAssetSelect(els.sceneBackground, assets, /\.(png|jpe?g|webp|gif)$/i, scene.background || '')
+    fillAssetSelect(els.sceneBgm, assets, /\.(mp3|ogg|wav|m4a|aac)$/i, scene.bgm || '')
+    els.sceneCaption.value = scene.caption || ''
+    state.sceneDraft = (scene.sprites || []).map((sprite) => ({
+      characterId: sprite.characterId || '',
+      pos: sprite.pos || 'center',
+      emotion: sprite.emotion || '',
+    }))
+    renderSceneSpriteRows()
+    els.sceneModal.hidden = false
+  }
+
+  function addSceneSprite() {
+    const characters = sceneCharacters()
+    if (characters.length === 0) {
+      toast('房间里没有可用的立绘角色', 'error')
+      return
+    }
+    state.sceneDraft.push({ characterId: characters[0].id, pos: 'center', emotion: '' })
+    renderSceneSpriteRows()
+  }
+
+  async function saveScene() {
+    els.sceneSave.disabled = true
+    try {
+      const data = await api(roomPath('/scene'), {
+        method: 'POST',
+        token: state.member.token,
+        body: {
+          background: els.sceneBackground.value,
+          bgm: els.sceneBgm.value,
+          caption: els.sceneCaption.value,
+          sprites: state.sceneDraft
+            .filter((sprite) => sprite.characterId)
+            .map((sprite) => ({
+              characterId: sprite.characterId,
+              pos: sprite.pos,
+              emotion: sprite.emotion,
+            })),
+        },
+      })
+      if (state.room) state.room.scene = data.scene
+      state.stageHidden = false
+      els.sceneModal.hidden = true
+      renderStage()
+      toast('舞台已更新')
+    } catch (error) {
+      toast(error.message, 'error')
+    } finally {
+      els.sceneSave.disabled = false
+    }
+  }
+
+  // ---------- 选项投票 ----------
+
+  function renderChoice() {
+    const choice = state.room && state.room.choice
+    if (!choice) {
+      els.choiceBar.hidden = true
+      return
+    }
+    els.choiceBar.hidden = false
+    els.choiceTitle.textContent = `选项投票 · 已投 ${choice.voted}/${choice.total}`
+    els.choiceOptionsList.textContent = ''
+    const myVote = state.member && choice.votes ? choice.votes[state.member.id] : null
+    for (const option of choice.options || []) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'mini choice-option' + (myVote === option.id ? ' active' : '')
+      button.textContent = `${option.text}（${option.votes}）`
+      button.addEventListener('click', () => void castChoice(option.id))
+      els.choiceOptionsList.append(button)
+    }
+    els.choiceCancel.hidden = !isGm()
+  }
+
+  function openChoiceModal() {
+    if (!isGm()) return
+    const storyChoices = (state.room && state.room.story && state.room.story.choices) || []
+    els.choiceOptionsInput.value = storyChoices.join('\n')
+    els.choiceModal.hidden = false
+  }
+
+  async function startChoice() {
+    const options = els.choiceOptionsInput.value
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 6)
+    if (options.length < 2) {
+      toast('至少写两个选项', 'error')
+      return
+    }
+    els.choiceStartSubmit.disabled = true
+    try {
+      const data = await api(roomPath('/choice'), {
+        method: 'POST',
+        token: state.member.token,
+        body: { action: 'start', options },
+      })
+      if (state.room) state.room.choice = data.choice
+      els.choiceModal.hidden = true
+      renderChoice()
+      toast('已发起选项投票')
+    } catch (error) {
+      toast(error.message, 'error')
+    } finally {
+      els.choiceStartSubmit.disabled = false
+    }
+  }
+
+  async function castChoice(optionId) {
+    try {
+      const data = await api(roomPath('/choice'), {
+        method: 'POST',
+        token: state.member.token,
+        body: { action: 'cast', optionId },
+      })
+      if (state.room) state.room.choice = data.choice || null
+      renderChoice()
+      if (data.passed) toast(`投票结果：${data.winner}`)
+    } catch (error) {
+      toast(error.message, 'error')
+    }
+  }
+
+  async function cancelChoice() {
+    try {
+      const data = await api(roomPath('/choice'), {
+        method: 'POST',
+        token: state.member.token,
+        body: { action: 'cancel' },
+      })
+      if (state.room) state.room.choice = data.choice || null
+      renderChoice()
+    } catch (error) {
+      toast(error.message, 'error')
+    }
   }
 
   function renderComposerTarget() {
@@ -630,6 +1067,11 @@
     es.addEventListener('room', onRoomEvent)
     es.addEventListener('phase', onPhaseEvent)
     es.addEventListener('roles', onRolesEvent)
+    es.addEventListener('story', onStoryEvent)
+    es.addEventListener('scene', onSceneEvent)
+    es.addEventListener('choice', onChoiceEvent)
+    es.addEventListener('restore', onRestoreEvent)
+    es.addEventListener('saves', onSavesEvent)
   }
 
   function closeStream() {
@@ -879,6 +1321,70 @@
     if (state.room && Array.isArray(data.cast)) state.room.cast = data.cast
     renderComposerTarget()
     if (!els.rolesModal.hidden) void loadRoles()
+  }
+
+  function onStoryEvent(event) {
+    let data
+    try {
+      data = JSON.parse(event.data)
+    } catch {
+      return
+    }
+    if (state.room) state.room.story = data.story || null
+    renderStory()
+  }
+
+  function onSceneEvent(event) {
+    let data
+    try {
+      data = JSON.parse(event.data)
+    } catch {
+      return
+    }
+    if (state.room) state.room.scene = data.scene || null
+    renderStage()
+  }
+
+  function onChoiceEvent(event) {
+    let data
+    try {
+      data = JSON.parse(event.data)
+    } catch {
+      return
+    }
+    if (state.room) state.room.choice = data.choice || null
+    renderChoice()
+  }
+
+  function onSavesEvent(event) {
+    let data
+    try {
+      data = JSON.parse(event.data)
+    } catch {
+      return
+    }
+    renderSaves(data)
+  }
+
+  function onRestoreEvent(event) {
+    let data
+    try {
+      data = JSON.parse(event.data)
+    } catch {
+      return
+    }
+    state.room = data.room
+    state.hydrated = true
+    state.seen.clear()
+    state.lastSeq = 0
+    state.history = []
+    els.messages.textContent = ''
+    for (const message of data.messages || []) addMessage(message)
+    if (state.room && state.room.seq > state.lastSeq) state.lastSeq = state.room.seq
+    renderHeader()
+    renderMembers()
+    saveCache()
+    if (state.room && state.room.closed) showClosed()
   }
 
   // ---------- 角色本 / 阶段 / 汤底 ----------
@@ -1187,6 +1693,7 @@
     els.thinking.hidden = !thinking
     if (thinking) scrollToBottom()
     if (isGm()) els.advance.disabled = thinking
+    if (els.storyContinue) els.storyContinue.disabled = thinking
   }
 
   // ---------- 参与者 ----------
@@ -1311,13 +1818,12 @@
 
   // ---------- 发言 ----------
 
-  async function sendMessage(event) {
-    event.preventDefault()
-    const text = els.composerInput.value.trim()
-    if (!text) return
+  async function sendText(text) {
+    const value = String(text ?? '').trim()
+    if (!value) return false
     if (!state.member) {
       toast('还没加入房间，刷新页面重新进一次', 'error')
-      return
+      return false
     }
     els.send.disabled = true
     const to = els.composerTo.value || ''
@@ -1325,17 +1831,24 @@
       await api(roomPath('/messages'), {
         method: 'POST',
         token: state.member.token,
-        body: { text, ...(to ? { to } : {}) },
+        body: { text: value, ...(to ? { to } : {}) },
       })
       els.composerInput.value = ''
       els.composerTo.value = ''
       updateComposerHint()
+      return true
     } catch (error) {
       toast(error.message, 'error')
+      return false
     } finally {
       els.send.disabled = false
       els.composerInput.focus()
     }
+  }
+
+  async function sendMessage(event) {
+    event.preventDefault()
+    await sendText(els.composerInput.value)
   }
 
   // ---------- 邀请链接 ----------
@@ -1434,6 +1947,203 @@
     els.linkModal.hidden = false
   }
 
+  // ---------- 存档 / 记忆 ----------
+
+  function saveTime(ts) {
+    const date = new Date(ts || Date.now())
+    return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(
+      date.getHours(),
+    ).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  }
+
+  function renderSaves(payload) {
+    const data = payload || state.saves || { auto: null, saves: [] }
+    state.saves = data
+    els.savesList.textContent = ''
+    const items = []
+    if (data.auto) items.push(data.auto)
+    for (const save of data.saves || []) items.push(save)
+    if (items.length === 0) {
+      const empty = document.createElement('li')
+      empty.className = 'muted small'
+      empty.textContent = '还没有存档；每回合会自动存一份，也可以手动新建。'
+      els.savesList.append(empty)
+      els.rewindBtn.disabled = true
+      return
+    }
+    for (const save of items) {
+      const item = document.createElement('li')
+      item.className = 'save-item'
+      const info = document.createElement('div')
+      info.className = 'save-info'
+      const name = document.createElement('strong')
+      name.textContent = save.name || (save.kind === 'auto' ? '自动存档' : '存档')
+      const meta = document.createElement('span')
+      meta.className = 'muted small'
+      meta.textContent = `${save.kind === 'auto' ? '自动 · ' : ''}第 ${save.turn || 0} 回合${
+        save.chapter ? ' · ' + save.chapter : ''
+      } · ${save.messageCount || 0} 条 · ${saveTime(save.at)}`
+      info.append(name, meta)
+
+      const actions = document.createElement('div')
+      actions.className = 'save-actions'
+      const load = document.createElement('button')
+      load.type = 'button'
+      load.className = 'mini primary'
+      load.textContent = '读取'
+      load.addEventListener('click', () => void loadSave(save.id))
+      actions.append(load)
+      if (save.kind !== 'auto') {
+        const remove = document.createElement('button')
+        remove.type = 'button'
+        remove.className = 'mini danger-mini'
+        remove.textContent = '删除'
+        remove.addEventListener('click', () => void deleteSave(save.id))
+        actions.append(remove)
+      }
+      item.append(info, actions)
+      els.savesList.append(item)
+    }
+    els.rewindBtn.disabled = !data.auto
+  }
+
+  async function openSaves() {
+    els.savesModal.hidden = false
+    els.savesList.textContent = '读取中…'
+    try {
+      const data = await api(roomPath('/saves'), { token: state.member.token })
+      renderSaves(data)
+    } catch (error) {
+      els.savesList.textContent = error.message
+    }
+  }
+
+  async function createSave() {
+    els.saveNew.disabled = true
+    try {
+      const data = await api(roomPath('/saves'), {
+        method: 'POST',
+        token: state.member.token,
+        body: { name: els.saveName.value.trim() },
+      })
+      els.saveName.value = ''
+      renderSaves({ auto: data.auto, saves: data.saves })
+      toast('已新建存档')
+    } catch (error) {
+      toast(error.message, 'error')
+    } finally {
+      els.saveNew.disabled = false
+    }
+  }
+
+  async function loadSave(saveId) {
+    try {
+      await api(roomPath(`/saves/${encodeURIComponent(saveId)}/load`), {
+        method: 'POST',
+        token: state.member.token,
+      })
+      els.savesModal.hidden = true
+      toast('已读档')
+    } catch (error) {
+      toast(error.message, 'error')
+    }
+  }
+
+  async function deleteSave(saveId) {
+    const ok = await window.showConfirm({
+      title: '删除存档',
+      message: '删除这个存档？不能恢复。',
+      okText: '删除',
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      const data = await api(roomPath(`/saves/${encodeURIComponent(saveId)}`), {
+        method: 'DELETE',
+        token: state.member.token,
+      })
+      renderSaves(data)
+    } catch (error) {
+      toast(error.message, 'error')
+    }
+  }
+
+  async function rewind() {
+    try {
+      await api(roomPath('/rewind'), { method: 'POST', token: state.member.token })
+      els.savesModal.hidden = true
+      toast('已回退一步')
+    } catch (error) {
+      toast(error.message, 'error')
+    }
+  }
+
+  function linesOf(text) {
+    return String(text || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+  }
+
+  function pairsOf(text) {
+    const out = {}
+    for (const line of linesOf(text)) {
+      const index = line.search(/[:：]/)
+      if (index <= 0) continue
+      const key = line.slice(0, index).trim().slice(0, 40)
+      const value = line.slice(index + 1).trim().slice(0, 200)
+      if (key && value) out[key] = value
+    }
+    return out
+  }
+
+  async function openMemory() {
+    els.memoryModal.hidden = false
+    try {
+      const data = await api(roomPath('/memory'), { token: state.member.token })
+      const memory = data.memory || {}
+      els.memoryFacts.value = (memory.facts || []).join('\n')
+      els.memoryItems.value = (memory.items || []).join('\n')
+      els.memoryRelations.value = Object.entries(memory.relations || {})
+        .map(([name, relation]) => `${name}：${relation}`)
+        .join('\n')
+      els.memoryAffection.value = Object.entries(memory.affection || {})
+        .map(([name, value]) => `${name}：${value}`)
+        .join('\n')
+    } catch (error) {
+      toast(error.message, 'error')
+    }
+  }
+
+  async function saveMemory() {
+    els.memorySave.disabled = true
+    try {
+      const relations = pairsOf(els.memoryRelations.value)
+      const affection = {}
+      for (const [name, value] of Object.entries(pairsOf(els.memoryAffection.value))) {
+        const number = Number(value)
+        if (Number.isFinite(number)) affection[name] = number
+      }
+      const data = await api(roomPath('/memory'), {
+        method: 'PATCH',
+        token: state.member.token,
+        body: {
+          facts: linesOf(els.memoryFacts.value),
+          items: linesOf(els.memoryItems.value),
+          relations,
+          affection,
+        },
+      })
+      if (state.room && state.room.story) state.room.story.memory = data.memory
+      els.memoryModal.hidden = true
+      toast('记忆已保存')
+    } catch (error) {
+      toast(error.message, 'error')
+    } finally {
+      els.memorySave.disabled = false
+    }
+  }
+
   // ---------- 事件绑定 ----------
 
   els.joinForm.addEventListener('submit', onJoin)
@@ -1465,8 +2175,47 @@
   els.truthModal.addEventListener('click', (event) => {
     if (event.target === els.truthModal) els.truthModal.hidden = true
   })
+  els.stageBtn.addEventListener('click', toggleStage)
+  els.stageCollapse.addEventListener('click', toggleStage)
+  els.stageBgmToggle.addEventListener('click', toggleStageBgm)
+  els.sceneEdit.addEventListener('click', openSceneEditor)
+  els.sceneAddSprite.addEventListener('click', addSceneSprite)
+  els.sceneSave.addEventListener('click', saveScene)
+  els.sceneClose.addEventListener('click', () => {
+    els.sceneModal.hidden = true
+  })
+  els.sceneModal.addEventListener('click', (event) => {
+    if (event.target === els.sceneModal) els.sceneModal.hidden = true
+  })
+  els.choiceStart.addEventListener('click', openChoiceModal)
+  els.choiceStartSubmit.addEventListener('click', startChoice)
+  els.choiceClose.addEventListener('click', () => {
+    els.choiceModal.hidden = true
+  })
+  els.choiceModal.addEventListener('click', (event) => {
+    if (event.target === els.choiceModal) els.choiceModal.hidden = true
+  })
+  els.choiceCancel.addEventListener('click', cancelChoice)
+  els.savesBtn.addEventListener('click', openSaves)
+  els.saveNew.addEventListener('click', createSave)
+  els.rewindBtn.addEventListener('click', rewind)
+  els.savesClose.addEventListener('click', () => {
+    els.savesModal.hidden = true
+  })
+  els.savesModal.addEventListener('click', (event) => {
+    if (event.target === els.savesModal) els.savesModal.hidden = true
+  })
+  els.memoryBtn.addEventListener('click', openMemory)
+  els.memorySave.addEventListener('click', saveMemory)
+  els.memoryClose.addEventListener('click', () => {
+    els.memoryModal.hidden = true
+  })
+  els.memoryModal.addEventListener('click', (event) => {
+    if (event.target === els.memoryModal) els.memoryModal.hidden = true
+  })
   els.composerTo.addEventListener('change', updateComposerHint)
   els.advance.addEventListener('click', advance)
+  els.storyContinue.addEventListener('click', advance)
   els.closeRoom.addEventListener('click', closeRoom)
   els.toggleMembers.addEventListener('click', () => document.body.classList.toggle('members-open'))
   document.addEventListener('keydown', (event) => {
@@ -1475,6 +2224,10 @@
       closeLinkModal()
       els.rolesModal.hidden = true
       els.truthModal.hidden = true
+      els.sceneModal.hidden = true
+      els.choiceModal.hidden = true
+      els.savesModal.hidden = true
+      els.memoryModal.hidden = true
     }
   })
 

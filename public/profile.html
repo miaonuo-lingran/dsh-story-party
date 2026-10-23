@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="author" content="B站：喵诺澪染">
+  <title>联机 Galgame · 个人资料</title>
+  <link rel="stylesheet" href="/room-assets/room.css">
+</head>
+<body>
+  <section class="screen center">
+    <div class="card profile-card">
+      <p class="eyebrow">PROFILE</p>
+      <h1>个人资料</h1>
+      <p class="muted">换头像和名字；开房、进房、自我游玩时会自动带上。</p>
+
+      <div class="profile-head">
+        <span id="profile-avatar" class="avatar profile-avatar" aria-hidden="true">👤</span>
+        <div class="profile-actions">
+          <button id="profile-pick" class="ghost" type="button">选择头像</button>
+          <button id="profile-clear" class="ghost" type="button">移除头像</button>
+          <input type="file" id="profile-file" accept="image/*" hidden>
+          <span class="muted small">头像会缩成 128×128 JPEG，只存在这台浏览器。</span>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>昵称</span>
+        <input id="profile-name" maxlength="16" autocomplete="nickname" placeholder="比如 澪">
+      </label>
+
+      <div class="profile-preview">
+        <span class="muted small">预览</span>
+        <span id="preview-avatar" class="avatar avatar-sm" aria-hidden="true">👤</span>
+        <strong id="preview-name">你的昵称</strong>
+      </div>
+
+      <div class="profile-buttons">
+        <button id="profile-save" class="primary block" type="button">保存资料</button>
+        <a class="ghost block" href="/">回开房页</a>
+      </div>
+      <p id="profile-status" class="muted small"></p>
+    </div>
+  </section>
+
+  <footer class="brand-footer">由 B站：喵诺澪染 制作 · 开源免费 · 禁止倒卖</footer>
+
+  <script src="/room-assets/profile.js" defer></script>
+</body>
+</html>

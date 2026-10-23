@@ -53,12 +53,18 @@ async function api(path, options = {}) {
 try {
   await server.start()
 
-  const created = await api('/api/rooms', { method: 'POST', body: { gmName: '澪' } })
+  const created = await api('/api/rooms', {
+    method: 'POST',
+    body: { gmName: '澪', avatar: PIXEL },
+  })
   const roomId = created.room.id
-  const joinAs = (name, machineCode) =>
+  const gm = created.room.members.find((member) => member.role === 'gm')
+  assert.equal(gm.avatar, PIXEL)
+  console.log('建房带个人头像 OK')
+  const joinAs = (name, machineCode, avatar) =>
     api(`/api/rooms/${roomId}/join`, {
       method: 'POST',
-      body: { name, inviteToken: created.inviteToken, machineCode },
+      body: { name, inviteToken: created.inviteToken, machineCode, ...(avatar ? { avatar } : {}) },
     })
 
   const first = await joinAs('小满', MACHINE)
@@ -85,6 +91,11 @@ try {
   assert.equal(again.member.uid, first.member.uid)
   assert.equal(again.member.avatar, PIXEL)
   console.log('机器码认回 uid + 头像 OK')
+
+  // 新玩家带个人资料头像进房
+  const withProfile = await joinAs('带资料', 'machine-bbbb2222', PIXEL)
+  assert.equal(withProfile.member.avatar, PIXEL)
+  console.log('加入时带个人资料头像 OK')
 
   // 非法头像拒绝
   await assert.rejects(

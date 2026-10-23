@@ -4,10 +4,16 @@
 > 仓库：<https://github.com/miaonuo-lingran/dsh-story-party>
 > 当前版本：`dsh-story-party@0.2.0`
 
+## 状态（2026-10-22）
+
+- GitHub topic `dsh-plugin` 已存在（当前 topics：`ai-story, deepseek-harness, dsh-plugin, dsh-plugins, galgame, multiplayer`）
+- **尚未正式提交**：2026-10-22 曾误创建 issue #381，已按作者要求关闭；等作者确认后再重新提交
+- npm 上最新仍是 `0.1.48`；`0.2.0` 的 `.npmrc` token 校验返回 401，更新 token 后执行 `npm publish` 即可
+
 ## 提交前检查
 
 - [x] 仓库公开
-- [ ] 仓库 Topics 添加 `dsh-plugin`（需要仓库管理员在 GitHub 网页操作）
+- [x] 仓库 Topics 添加 `dsh-plugin`（需要仓库管理员在 GitHub 网页操作）
 - [x] README 包含安装命令
 - [x] 插件导出 `apply(ctx)`
 - [x] 仓库根目录有 `package.json`
@@ -47,7 +53,7 @@ dsh plugin --profile desktop add dsh-story-party
 - 无外部服务依赖；公网联机需要自己准备 frp / 反代
 
 ### 许可证
-MIT
+MIT（代码）；内置鲸鱼娘立绘为 CC BY-NC-SA 4.0（非商业，署名链见 NOTICE / LICENSE-ARTWORK）
 
 ### 截图 / 演示
 - 剧本杀角色本（玩家只能看自己那份）：
